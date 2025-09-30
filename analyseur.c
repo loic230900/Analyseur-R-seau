@@ -15,11 +15,13 @@ int main(int argc, char **argv) {
     
     /*Rechercher s il y a des interfaces reseaux*/
     if(pcap_lookupdev(errbuf ) == NULL) {
-        fprintf(stderr, "No network interfaces found: %s\n", errbuf);
+        fprintf(stderr, "Pas d'interface trouvée: %s\n", errbuf);
         return 2;
-    } else {
-        printf("Network interface found: %s\n", pcap_lookupdev(errbuf));
+    } else{
+        char device = pcap_lookupdev(errbuf); 
     }
+    /*Ouverture du fichier pcap*/
+    pcap_t *capture = pcap
 
 
 
