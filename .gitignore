@@ -1,2 +1,5 @@
 .vscode/
 
+#fichier .o
+*.o
+*.obj
