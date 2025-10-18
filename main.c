@@ -11,6 +11,7 @@ int main(int argc, char *argv[]) {
     char *filename = NULL;
     char *filter_exp = NULL;
     int opt;
+    int verbosity = 3;
     char errbuf[PCAP_ERRBUF_SIZE];
     pcap_t *handle;
 
@@ -26,8 +27,14 @@ int main(int argc, char *argv[]) {
             case 'f':
                 filter_exp = optarg;  // expression de filtre BPF
                 break;
+            case 'v':
+                verbosity = atoi(optarg); 
+                if(verbosity < 1 || verbosity > 3){
+                    fprintf(stderr, "Niveau de verbosité invalide(doit être entre 1 et 3).\n");
+                    return 1;
+                }
             default:
-                fprintf(stderr, "Usage: %s [-i interface | -o fichier] [-f filtre]\n", argv[0]);
+                fprintf(stderr, "Usage: %s [-i interface | -o fichier] [-f filtre] [-v niveau_verbosité]\n", argv[0]);
                 exit(EXIT_FAILURE);
         }
     }
@@ -82,7 +89,10 @@ int main(int argc, char *argv[]) {
     }
 
     //boucle de capture des paquets
-    if(pcap_loop(handle,-1, packet_handler, NULL) == -1) {
+    capture_args_t args;
+    args.verbosity = verbosity;
+
+    if(pcap_loop(handle,-1, packet_handler, (u_char * )&args) == -1) {
         fprintf(stderr, "Erreur lors de la capture des paquets: %s\n", pcap_geterr(handle));
         pcap_close(handle);
         return 2;
