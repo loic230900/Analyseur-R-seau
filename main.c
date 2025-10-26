@@ -16,7 +16,7 @@ int main(int argc, char *argv[]) {
     pcap_t *handle;
 
     //parsing options
-    while ((opt = getopt(argc, argv, "i:o:f:")) != -1) {
+    while ((opt = getopt(argc, argv, "i:o:f:v:")) != -1) {
         switch (opt) {
             case 'i':
                 interface = optarg;   // nom de l'interface pour capture live
@@ -33,6 +33,7 @@ int main(int argc, char *argv[]) {
                     fprintf(stderr, "Niveau de verbosité invalide(doit être entre 1 et 3).\n");
                     return 1;
                 }
+                break;
             default:
                 fprintf(stderr, "Usage: %s [-i interface | -o fichier] [-f filtre] [-v niveau_verbosité]\n", argv[0]);
                 exit(EXIT_FAILURE);

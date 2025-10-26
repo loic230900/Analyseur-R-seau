@@ -1,5 +1,6 @@
 #include "ipv4.h"
 #include <stdio.h>
+#include <netinet/in.h>
 #include <netinet/ip.h>   // struct iphdr on Linux
 #include <arpa/inet.h>
 

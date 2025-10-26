@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 #include <pcap.h>
-#include <capture.h>
 
 /**
  * Analyse et affiche les champs de l'en-tête Ethernet.

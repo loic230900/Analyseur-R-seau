@@ -7,11 +7,11 @@
 #include <netinet/udp.h>
 #include <arpa/inet.h>
 #include "capture.h"
-#include "ethernet.h"
-#include "ipv4.h"
-#include "ipv6.h"
-#include "udp.h"
-#include "dhcp.h"
+#include "protocoles/ethernet.h"
+#include "protocoles/ipv4.h"
+#include "protocoles/ipv6.h"
+#include "protocoles/udp.h"
+#include "protocoles/dhcp.h"
 
 void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
     capture_args_t *capture = (capture_args_t *)args;
@@ -40,8 +40,8 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
             if(ip->protocol == IPPROTO_UDP){
                 strcat(resume, " | UDP");
                 const struct udphdr *udp = (const struct udphdr *)(packet + offset);
-                uint16_t src_port = ntohs(udp->uh_sport);
-                uint16_t dst_port = ntohs(udp->uh_dport);
+                uint16_t src_port = ntohs(udp->source);
+                uint16_t dst_port = ntohs(udp->dest);
                 if (src_port == 67 || src_port == 68 || dst_port == 67 || dst_port == 68){
                     strcat(resume, " | BOOTP/DHCP");
                 }
@@ -58,8 +58,8 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
             if(ip6->ip6_nxt == IPPROTO_UDP){
                 strcat(resume, " | UDP");
                 const struct udphdr *udp = (const struct udphdr *)(packet + offset);
-                uint16_t src_port = ntohs(udp->uh_sport);
-                uint16_t dst_port = ntohs(udp->uh_dport);
+                uint16_t src_port = ntohs(udp->source);
+                uint16_t dst_port = ntohs(udp->dest);
                 if (src_port == 67 || src_port == 68 || dst_port == 67 || dst_port == 68){
                     strcat(resume, " | BOOTP/DHCP");
                 }

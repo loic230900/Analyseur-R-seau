@@ -3,7 +3,6 @@
 
 #include <stdint.h>
 #include <pcap.h>
-#include <capture.h>
 #include "bootp.h"
 /**
  * Analyse et affiche les champs d'un message DHCP (BOOTP).
