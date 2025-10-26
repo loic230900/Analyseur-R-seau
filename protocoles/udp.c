@@ -3,14 +3,14 @@
 #include <netinet/udp.h>
 
 int parse_udp(const u_char *packet, int length, int verbosity, int indent, uint16_t *src_port, uint16_t *dst_port){
-    if(length < sizeof(struct udphdr)){
+    if(length < (int)sizeof(struct udphdr)){
         fprintf(stderr, "Erreur: Paquet trop court pour contenir un en-tête UDP.\n");
         return 0;
     }
     const struct udphdr *udp = (const struct udphdr *)packet;
-    *src_port = ntohs(udp->uh_sport);
-    *dst_port = ntohs(udp->uh_dport);
-    uint16_t udp_length = ntohs(udp->uh_ulen);
+    *src_port = ntohs(udp->source);
+    *dst_port = ntohs(udp->dest);
+    uint16_t udp_length = ntohs(udp->len);
 
     //verbosite 2 
     if (verbosity == 2) {

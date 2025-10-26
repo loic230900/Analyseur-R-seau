@@ -4,7 +4,7 @@
 #include <arpa/inet.h>
 
 int parse_ipv6(const u_char *packet, int length, int verbosity, int indent, uint8_t *next_hdr){
-    if(length < sizeof(struct ip6_hdr)) {
+    if(length < (int)sizeof(struct ip6_hdr)) {
         fprintf(stderr, "Erreur: Paquet trop court pour contenir un en-tête IPv6.\n");
         return 0;
     }
