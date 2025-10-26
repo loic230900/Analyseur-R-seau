@@ -1,6 +1,7 @@
 #include "dhcp.h"
 #include "bootp.h"
 #include <stdio.h>
+#include <string.h>
 #include <arpa/inet.h>
 
 void parse_dhcp(const u_char *packet, int length, int verbosity, int indent){
@@ -224,7 +225,7 @@ void parse_dhcp(const u_char *packet, int length, int verbosity, int indent){
                             //option non gérée: afficher en hexadécimal
                             {
                                 int i;
-                                printf("%*s    Option %u: ", indent, "", code);
+                                printf("%*s    Option %u: ", indent, "", type);
                                 for (i = 0; i < len; i++)
                                     printf("%02x", optptr[i]);
                                 printf("\n");

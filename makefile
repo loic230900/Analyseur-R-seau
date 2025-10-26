@@ -8,8 +8,7 @@ CFLAGS = -Wall -Wextra -std=c99 -D_DEFAULT_SOURCE -g
 
 # Fichiers objets
 OBJS = main.o capture.o hexdump.o \
-       protocoles/ethernet.o protocoles/ipv4.o protocoles/ipv6.o \
-       protocoles/udp.o protocoles/dhcp.o
+       ethernet.o ipv4.o ipv6.o udp.o dhcp.o
 
 # Règle par défaut
 $(TARGET): $(OBJS)
@@ -18,6 +17,10 @@ $(TARGET): $(OBJS)
 # Compilation des .c en .o
 %.o: %.c
 	$(CC) $(CFLAGS) -c $<
+
+# Compilation des fichiers dans protocoles/
+%.o: protocoles/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
 # Cible de nettoyage
 clean:

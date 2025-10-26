@@ -30,4 +30,5 @@ int parse_ethernet(const u_char *packet, int length, int verbosity, int indent, 
         printf("%*s  Source MAC:      %s\n", indent, "", src_mac);
         printf("%*s  EtherType:      0x%04x\n", indent, "", *ethertype);
     }
+    return 14; // Taille de l'en-tête Ethernet
 }
