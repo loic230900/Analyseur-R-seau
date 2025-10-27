@@ -1,5 +1,6 @@
 #include "ipv6.h"
 #include <stdio.h>
+#include <string.h>
 #include <netinet/ip6.h>
 #include <arpa/inet.h>
 
@@ -35,10 +36,21 @@ int parse_ipv6(const u_char *packet, int length, int verbosity, int indent, uint
         printf("Payload Length: %u, Next Header: %u, Hop Limit: %u\n",payload_len, ip6->ip6_nxt, ip6->ip6_hlim);
         
         for(int i = 0; i < indent+2; i++) printf(" ");
-        printf("Source IP:      %s\n", src_ip);
+        printf("Source IP:      %s", src_ip);
+        // Identifier les adresses spéciales IPv6
+        if(strcmp(src_ip, "::") == 0 || strcmp(src_ip, "::1") == 0) printf(" [UNSPECIFIED/LOOPBACK]");
+        else if(strncmp(src_ip, "ff", 2) == 0) printf(" [MULTICAST]");
+        else if(strncmp(src_ip, "fe80:", 5) == 0) printf(" [LINK-LOCAL]");
+        else if(strncmp(src_ip, "fc00:", 5) == 0 || strncmp(src_ip, "fd00:", 5) == 0) printf(" [UNIQUE-LOCAL]");
+        printf("\n");
         
         for(int i = 0; i < indent+2; i++) printf(" ");
-        printf("Destination IP: %s\n", dst_ip);
+        printf("Destination IP: %s", dst_ip);
+        if(strcmp(dst_ip, "::") == 0 || strcmp(dst_ip, "::1") == 0) printf(" [UNSPECIFIED/LOOPBACK]");
+        else if(strncmp(dst_ip, "ff", 2) == 0) printf(" [MULTICAST]");
+        else if(strncmp(dst_ip, "fe80:", 5) == 0) printf(" [LINK-LOCAL]");
+        else if(strncmp(dst_ip, "fc00:", 5) == 0 || strncmp(dst_ip, "fd00:", 5) == 0) printf(" [UNIQUE-LOCAL]");
+        printf("\n");
     }
     return sizeof(struct ip6_hdr); // taille fixe de l'en-tête IPv6
 }

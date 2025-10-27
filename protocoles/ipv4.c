@@ -1,5 +1,6 @@
 #include "ipv4.h"
 #include <stdio.h>
+#include <string.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>   // struct iphdr on Linux
 #include <arpa/inet.h>
@@ -45,17 +46,39 @@ int parse_ipv4(const u_char *packet, int length, int verbosity, int indent, uint
         uint8_t flags = (frag_off >> 13) & 0x7; // Reserved, DF, MF
         uint16_t offset = frag_off & 0x1FFF;
 
+        // Décodage des flags
         for (int i = 0; i < indent + 2; i++) printf(" ");
-        printf("Flags: 0x%x, Fragment Offset: %u\n", flags, offset);
+        printf("Flags: 0x%x", flags);
+        if(flags & 0x2) printf(" DF"); // Don't Fragment
+        if(flags & 0x4) printf(" MF"); // More Fragments
+        if(flags == 0) printf(" (none)");
+        printf(", Fragment Offset: %u", offset);
+        if(offset > 0 || (flags & 0x4)) printf(" [FRAGMENTED]");
+        printf("\n");
 
         for (int i = 0; i < indent + 2; i++) printf(" ");
         printf("TTL: %u, Protocol: %u, Checksum: 0x%04x\n", ip->ttl, ip->protocol, ntohs(ip->check));
 
         for (int i = 0; i < indent + 2; i++) printf(" ");
-        printf("Source IP: %s\n", src_ip);
+        printf("Source IP: %s", src_ip);
+        // Identifier les adresses spéciales
+        if(strcmp(src_ip, "0.0.0.0") == 0) printf(" [UNSPECIFIED]");
+        else if(strcmp(src_ip, "255.255.255.255") == 0) printf(" [BROADCAST]");
+        else if(strncmp(src_ip, "127.", 4) == 0) printf(" [LOOPBACK]");
+        else if(strncmp(src_ip, "224.", 4) == 0 || strncmp(src_ip, "239.", 4) == 0) printf(" [MULTICAST]");
+        else if(strncmp(src_ip, "169.254.", 8) == 0) printf(" [LINK-LOCAL]");
+        else if(strncmp(src_ip, "10.", 3) == 0 || strncmp(src_ip, "192.168.", 8) == 0 || strncmp(src_ip, "172.16.", 7) == 0) printf(" [PRIVATE]");
+        printf("\n");
 
         for (int i = 0; i < indent + 2; i++) printf(" ");
-        printf("Destination IP: %s\n", dst_ip);
+        printf("Destination IP: %s", dst_ip);
+        if(strcmp(dst_ip, "0.0.0.0") == 0) printf(" [UNSPECIFIED]");
+        else if(strcmp(dst_ip, "255.255.255.255") == 0) printf(" [BROADCAST]");
+        else if(strncmp(dst_ip, "127.", 4) == 0) printf(" [LOOPBACK]");
+        else if(strncmp(dst_ip, "224.", 4) == 0 || strncmp(dst_ip, "239.", 4) == 0) printf(" [MULTICAST]");
+        else if(strncmp(dst_ip, "169.254.", 8) == 0) printf(" [LINK-LOCAL]");
+        else if(strncmp(dst_ip, "10.", 3) == 0 || strncmp(dst_ip, "192.168.", 8) == 0 || strncmp(dst_ip, "172.16.", 7) == 0) printf(" [PRIVATE]");
+        printf("\n");
         if (ihl > 20) {
             for (int i = 0; i < indent + 2; i++) printf(" ");
             printf("Options: %d bytes\n", ihl - 20);

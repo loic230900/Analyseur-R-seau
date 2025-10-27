@@ -32,7 +32,7 @@ int parse_tcp(const u_char *packet, int length, int verbosity, int indent, uint1
     //verbosite 3
     else if (verbosity == 3) {
         for(int i = 0; i < indent; i++) printf(" ");
-        printf("TCP:\n");
+        printf("TCP Header:\n");
         
         for(int i = 0; i < indent+2; i++) printf(" ");
         printf("Source Port:      %u\n", *src_port);
@@ -73,11 +73,36 @@ int parse_tcp(const u_char *packet, int length, int verbosity, int indent, uint1
         for(int i = 0; i < indent+2; i++) printf(" ");
         printf("Urgent Pointer: %u\n", ntohs(tcp->urg_ptr));
         
-        // Options display (if any)
+        // Options et Padding (si présents)
         if(tcp_header_len > (int)sizeof(struct tcphdr)){
-            int options_len = tcp_header_len - (int)sizeof(struct tcphdr);
-            for(int i = 0; i < indent+2; i++) printf(" ");
-            printf("Options: %d bytes\n", options_len);
+            // Le header TCP doit être un multiple de 4 octets
+            int padding = (4 - (tcp_header_len % 4)) % 4;
+            int options_len = tcp_header_len - (int)sizeof(struct tcphdr) - padding;
+            
+            if(options_len > 0) {
+                for(int i = 0; i < indent+2; i++) printf(" ");
+                printf("Options: %d bytes\n", options_len);
+                
+                // Afficher les options si on a la place
+                if(length >= tcp_header_len && options_len <= 40) {
+                    const u_char *options = packet + sizeof(struct tcphdr);
+                    for(int i = 0; i < options_len; i++) {
+                        if(i % 16 == 0 && i > 0) printf("\n");
+                        if(i % 16 == 0) {
+                            for(int j = 0; j < indent+2; j++) printf(" ");
+                            printf("  ");
+                        }
+                        printf("%02x ", options[i]);
+                    }
+                    if(options_len > 0) printf("\n");
+                }
+            }
+            
+            // Padding
+            if(padding > 0) {
+                for(int i = 0; i < indent+2; i++) printf(" ");
+                printf("Padding: %d bytes\n", padding);
+            }
         }
     }
     return tcp_header_len;

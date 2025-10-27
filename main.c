@@ -99,6 +99,7 @@ int main(int argc, char *argv[]) {
         return 2;
     }
     pcap_close(handle);
+    
     return 0;
 
 }
