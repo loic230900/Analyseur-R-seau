@@ -33,7 +33,7 @@ int parse_ipv4(const u_char *packet, int length, int verbosity, int indent, uint
     // verbosite 3 detaillee
     else if (verbosity == 3) {
         for (int i = 0; i < indent; i++) printf(" ");
-        printf("IPv4:\n");
+        printf("IP:\n");
 
         for (int i = 0; i < indent + 2; i++) printf(" ");
         printf("Version: %u, IHL: %u (%d bytes), TOS: 0x%02x\n", ip->version, ip->ihl, ihl, ip->tos);

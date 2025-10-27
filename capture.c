@@ -1,3 +1,4 @@
+#define _DEFAULT_SOURCE
 #include <stdio.h>
 #include <string.h>
 #include <pcap.h>
@@ -5,6 +6,7 @@
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
 #include <netinet/udp.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include "capture.h"
 #include "protocoles/ethernet.h"
@@ -13,6 +15,7 @@
 #include "protocoles/udp.h"
 #include "protocoles/dhcp.h"
 #include "protocoles/arp.h"
+#include "protocoles/tcp.h"
 
 void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
     capture_args_t *capture = (capture_args_t *)args;
@@ -47,6 +50,26 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     strcat(resume, " | BOOTP/DHCP");
                 }
             }
+            //TCP
+            else if(ip->protocol == IPPROTO_TCP){
+                strcat(resume, " | TCP");
+                const struct tcphdr *tcp = (const struct tcphdr *)(packet + offset);
+                uint16_t src_port = ntohs(tcp->source);
+                uint16_t dst_port = ntohs(tcp->dest);
+                
+                // Détection HTTP (port 80)
+                if (src_port == 80 || dst_port == 80){
+                    strcat(resume, " | HTTP");
+                }
+                // Détection HTTPS (port 443)
+                else if (src_port == 443 || dst_port == 443){
+                    strcat(resume, " | HTTPS");
+                }
+                // Détection SSH (port 22)
+                else if (src_port == 22 || dst_port == 22){
+                    strcat(resume, " | SSH");
+                }
+            }
         }
         //IPV6 
         else if (ethertype == ETHERTYPE_IPV6){
@@ -65,6 +88,26 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     strcat(resume, " | BOOTP/DHCP");
                 }
             }
+            //TCP
+            else if(ip6->ip6_nxt == IPPROTO_TCP){
+                strcat(resume, " | TCP");
+                const struct tcphdr *tcp = (const struct tcphdr *)(packet + offset);
+                uint16_t src_port = ntohs(tcp->source);
+                uint16_t dst_port = ntohs(tcp->dest);
+                
+                // Détection HTTP (port 80)
+                if (src_port == 80 || dst_port == 80){
+                    strcat(resume, " | HTTP");
+                }
+                // Détection HTTPS (port 443)
+                else if (src_port == 443 || dst_port == 443){
+                    strcat(resume, " | HTTPS");
+                }
+                // Détection SSH (port 22)
+                else if (src_port == 22 || dst_port == 22){
+                    strcat(resume, " | SSH");
+                }
+            }
         }
         //ARP
         else if (ethertype == ETHERTYPE_ARP){
@@ -76,8 +119,8 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
 
     //Niveau 2 et 3 
     printf("\nPaquet %d - %u octets capturés\n", packet_count, header->len);
-    int indent = 0;
-    int offset = 0;
+    int indent = 0; //indentation pour l'affichage 
+    int offset = 0; //offset pour l'analyse des protocoles
     uint16_t ethertype;
 
     //Analyse Ethernet
@@ -106,6 +149,15 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                 parse_dhcp(packet + offset, header->len - offset, verbosity, indent);
             }
         }
+        //TCP
+        else if(proto == IPPROTO_TCP){
+            uint16_t src_port, dst_port;
+            uint8_t flags;
+            int tcp_len = parse_tcp(packet + offset, header->len - offset, verbosity, indent, &src_port, &dst_port, &flags);
+            offset += tcp_len;
+            indent += 2;
+            // TCP n'a pas de couche applicative standardisée comme DHCP, on ne fait rien ici (http, https, ssh, etc.)
+        }
     }
     else if (ethertype == ETHERTYPE_IPV6){
         uint8_t next_header;
@@ -123,6 +175,15 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
             if (src_port == 67 || src_port == 68 || dst_port == 67 || dst_port == 68){
                 parse_dhcp(packet + offset, header->len - offset, verbosity, indent);
             }
+        }
+        //TCP
+        else if(next_header == IPPROTO_TCP){
+            uint16_t src_port, dst_port;
+            uint8_t flags;
+            int tcp_len = parse_tcp(packet + offset, header->len - offset, verbosity, indent, &src_port, &dst_port, &flags);
+            offset += tcp_len;
+            indent += 2;
+            // TCP n'a pas de couche applicative standardisée comme DHCP, on ne fait rien ici (http, https, ssh, etc.)
         }
     }
 }

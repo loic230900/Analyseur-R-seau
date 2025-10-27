@@ -26,7 +26,7 @@ int parse_ipv6(const u_char *packet, int length, int verbosity, int indent, uint
     else if (verbosity == 3) {
         // Niveau 3 : affichage détaillé
         for(int i = 0; i < indent; i++) printf(" ");
-        printf("IPv6:\n");
+        printf("IP:\n");
         
         for(int i = 0; i < indent+2; i++) printf(" ");
         printf("Version: %u, TC: 0x%02x, Flow Label: 0x%05x\n",(v_tfl >> 28) & 0xF, (v_tfl >> 20) & 0xFF, v_tfl & 0xFFFFF);
