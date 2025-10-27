@@ -12,6 +12,7 @@
 #include "protocoles/ipv6.h"
 #include "protocoles/udp.h"
 #include "protocoles/dhcp.h"
+#include "protocoles/arp.h"
 
 void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
     capture_args_t *capture = (capture_args_t *)args;
@@ -65,6 +66,10 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                 }
             }
         }
+        //ARP
+        else if (ethertype == ETHERTYPE_ARP){
+            strcat(resume, "ARP");
+        }
         //Affichage résumé
         printf("%s | len: %u\n", resume, header->len);
     }
@@ -79,8 +84,12 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
     offset = parse_ethernet(packet, header->len, verbosity, indent, &ethertype);
     indent += 2; // augmentation de l'indentation pour les prochaines couches
 
-    //Analyuse IPv4 ou IPv6
-    if(ethertype == ETHERTYPE_IP){
+    //Analyse ARP (Layer 2, terminaison)
+    if(ethertype == ETHERTYPE_ARP){
+        parse_arp(packet + offset, header->len - offset, verbosity, indent);
+    }
+    //Analyse IPv4 ou IPv6
+    else if(ethertype == ETHERTYPE_IP){
         uint8_t proto;
         int ip_hdr_len = parse_ipv4(packet + offset, header->len - offset, verbosity, indent, &proto);
         offset += ip_hdr_len;
