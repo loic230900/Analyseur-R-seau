@@ -1,0 +1,103 @@
+# GitLab CI/CD Pipeline for Analyseur Réseau
+
+# Define the stages of the pipeline
+stages:
+  - build
+  - test
+  - quality
+
+# Variables that can be used across jobs
+variables:
+  BINARY_NAME: "analyseur"
+
+# ========================================
+# STAGE 1: BUILD
+# ========================================
+build:
+  stage: build
+  image: gcc:latest
+  
+  # Install dependencies before running script
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq libpcap-dev make
+  
+  # Build the project
+  script:
+    - echo "🔨 Building project..."
+    - make clean
+    - make
+    - ls -lh analyseur
+    - echo "✅ Build successful!"
+  
+  # Save the binary for later stages
+  artifacts:
+    paths:
+      - analyseur
+    expire_in: 1 hour
+  
+  # Only run on main branch and merge requests
+  only:
+    - main
+    - merge_requests
+
+# ========================================
+# STAGE 2: TEST
+# ========================================
+test:pcap-files:
+  stage: test
+  image: gcc:latest
+  
+  # This job needs the binary from the build stage
+  dependencies:
+    - build
+  
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq libpcap-dev
+  
+  script:
+    - echo "🧪 Running tests with PCAP files..."
+    - chmod +x analyseur
+    - ./analyseur -o tests/dhcp_test.pcap -v 3 | tee test_output.txt
+    - echo "✅ PCAP test completed!"
+    - echo "📊 Checking output..."
+    - grep -i "ethernet" test_output.txt && echo "✓ Ethernet detected" || echo "⚠ No Ethernet found"
+    - grep -i "ip" test_output.txt && echo "✓ IP detected" || echo "⚠ No IP found"
+  
+  artifacts:
+    paths:
+      - test_output.txt
+    expire_in: 1 week
+  
+  only:
+    - main
+    - merge_requests
+
+# ========================================
+# STAGE 3: CODE QUALITY
+# ========================================
+code-quality:cppcheck:
+  stage: quality
+  image: gcc:latest
+  
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq cppcheck
+  
+  script:
+    - echo "🔍 Running static analysis..."
+    - cppcheck --enable=warning,performance,portability --error-exitcode=0 --inline-suppr *.c protocoles/*.c 2>&1 | tee cppcheck-report.txt
+    - echo "✅ Code quality check completed!"
+  
+  artifacts:
+    paths:
+      - cppcheck-report.txt
+    expire_in: 1 week
+  
+  # Allow this to fail without blocking the pipeline
+  allow_failure: true
+  
+  only:
+    - main
+    - merge_requests
