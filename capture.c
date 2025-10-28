@@ -1,4 +1,3 @@
-#define _DEFAULT_SOURCE
 #include <stdio.h>
 #include <string.h>
 #include <pcap.h>
@@ -13,6 +12,7 @@
 #include "protocoles/ethernet.h"
 #include "protocoles/ipv4.h"
 #include "protocoles/ipv6.h"
+#include "protocoles/icmpv6.h"
 #include "protocoles/udp.h"
 #include "protocoles/dhcp.h"
 #include "protocoles/arp.h"
@@ -42,7 +42,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
             //analyse protocole transport
             if(ip->protocol == IPPROTO_UDP){
                 strcat(resume, " | UDP");
-                if(header->len >= offset + 8) {
+                if(header->len >= (unsigned int)(offset + 8)) {
                     const struct udphdr *udp = (const struct udphdr *)(packet + offset);
                     uint16_t src_port = ntohs(udp->source);
                     uint16_t dst_port = ntohs(udp->dest);
@@ -53,7 +53,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
             }
             else if(ip->protocol == IPPROTO_TCP){
                 strcat(resume, " | TCP");
-                if(header->len >= offset + 20) {
+                if(header->len >= (unsigned int)(offset + 20)) {
                     const struct tcphdr *tcp = (const struct tcphdr *)(packet + offset);
                     uint16_t src_port = ntohs(tcp->source);
                     uint16_t dst_port = ntohs(tcp->dest);
@@ -70,9 +70,19 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
             const struct ip6_hdr *ip6 = (const struct ip6_hdr *)(packet + offset);
             offset += sizeof(struct ip6_hdr);
 
-            if(ip6->ip6_nxt == IPPROTO_UDP){
+            if(ip6->ip6_nxt == IPPROTO_ICMPV6){
+                strcat(resume, " | ICMPv6");
+                // Optionally peek at type for NDP
+                if(header->len >= (unsigned int)(offset + 1)) {
+                    uint8_t icmp_type = packet[offset];
+                    if(icmp_type >= 133 && icmp_type <= 137) {
+                        strcat(resume, " | NDP");
+                    }
+                }
+            }
+            else if(ip6->ip6_nxt == IPPROTO_UDP){
                 strcat(resume, " | UDP");
-                if(header->len >= offset + 8) {
+                if(header->len >= (unsigned int)(offset + 8)) {
                     const struct udphdr *udp = (const struct udphdr *)(packet + offset);
                     uint16_t src_port = ntohs(udp->source);
                     uint16_t dst_port = ntohs(udp->dest);
@@ -83,7 +93,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
             }
             else if(ip6->ip6_nxt == IPPROTO_TCP){
                 strcat(resume, " | TCP");
-                if(header->len >= offset + 20) {
+                if(header->len >= (unsigned int)(offset + 20)) {
                     const struct tcphdr *tcp = (const struct tcphdr *)(packet + offset);
                     uint16_t src_port = ntohs(tcp->source);
                     uint16_t dst_port = ntohs(tcp->dest);
@@ -152,7 +162,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     }
                 }
                 //Hexdump pour verbosity 3
-                if(verbosity == 3 && offset < header->len) {
+                if(verbosity == 3 && (unsigned int)offset < header->len) {
                     for(int i = 0; i < indent; i++) printf(" ");
                     printf("Data (%d bytes):\n", header->len - offset);
                     print_hexdump(packet + offset, header->len - offset);
@@ -165,9 +175,17 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
             if(ip6_hdr_len > 0) {
                 offset += ip6_hdr_len;
                 indent += 2;
-                //Analyse protocole transport
+                //Analyse protocole transport/ICMPv6
+                //ICMPv6
+                if(next_header == IPPROTO_ICMPV6){
+                    int icmpv6_len = parse_icmpv6(packet + offset, header->len - offset, verbosity, indent);
+                    if(icmpv6_len > 0) {
+                        offset += icmpv6_len;
+                        indent += 2;
+                    }
+                }
                 //UDP
-                if(next_header == IPPROTO_UDP){
+                else if(next_header == IPPROTO_UDP){
                     uint16_t src_port, dst_port;
                     int udp_len = parse_udp(packet + offset, header->len - offset, verbosity, indent, &src_port, &dst_port);
                     if(udp_len > 0) {
@@ -190,7 +208,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     }
                 }
                 //Hexdump pour verbosity 3
-                if(verbosity == 3 && offset < header->len) {
+                if(verbosity == 3 && (unsigned int)offset < header->len) {
                     for(int i = 0; i < indent; i++) printf(" ");
                     printf("Data (%d bytes):\n", header->len - offset);
                     print_hexdump(packet + offset, header->len - offset);

@@ -1,4 +1,3 @@
-#define _DEFAULT_SOURCE
 #include "tcp.h"
 #include <stdio.h>
 #include <sys/types.h>
