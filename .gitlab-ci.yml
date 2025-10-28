@@ -74,7 +74,7 @@ build:clang:
 # ========================================
 test:pcap-files:
   stage: test
-  image: gcc:latest
+  image: gcc:11
   
   # This job needs the binary from the build stage
   dependencies:
@@ -119,7 +119,7 @@ test:pcap-files:
 # ========================================
 code-quality:cppcheck:
   stage: quality
-  image: gcc:latest
+  image: gcc:11
   
   before_script:
     - apt-get update -qq
@@ -147,7 +147,7 @@ code-quality:cppcheck:
 # ========================================
 security:valgrind:
   stage: security
-  image: gcc:latest
+  image: gcc:11
   
   dependencies:
     - build:gcc
@@ -188,7 +188,7 @@ security:valgrind:
 # ========================================
 release:build:
   stage: deploy
-  image: gcc:latest
+  image: gcc:11
   
   before_script:
     - apt-get update -qq
