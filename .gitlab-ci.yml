@@ -5,38 +5,66 @@ stages:
   - build
   - test
   - quality
+  - security
+  - deploy
 
 # Variables that can be used across jobs
 variables:
   BINARY_NAME: "analyseur"
 
 # ========================================
-# STAGE 1: BUILD
+# STAGE 1: BUILD (Multi-Compiler)
 # ========================================
-build:
+build:gcc:
   stage: build
-  image: gcc:latest
+  image: gcc:11
   
   # Install dependencies before running script
   before_script:
     - apt-get update -qq
     - apt-get install -y -qq libpcap-dev make
   
-  # Build the project
+  # Build the project with GCC
   script:
-    - echo "🔨 Building project..."
+    - echo "🔨 Building project with GCC..."
     - make clean
-    - make
+    - make CC=gcc
     - ls -lh analyseur
-    - echo "✅ Build successful!"
+    - echo "✅ GCC build successful!"
   
   # Save the binary for later stages
   artifacts:
     paths:
       - analyseur
     expire_in: 1 hour
+    name: "analyseur-gcc"
   
   # Only run on main branch and merge requests
+  only:
+    - main
+    - merge_requests
+
+build:clang:
+  stage: build
+  image: silkeh/clang:14
+  
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq libpcap-dev make
+  
+  script:
+    - echo "🔨 Building project with Clang..."
+    - make clean
+    - make CC=clang
+    - ls -lh analyseur
+    - echo "✅ Clang build successful!"
+  
+  artifacts:
+    paths:
+      - analyseur
+    expire_in: 1 hour
+    name: "analyseur-clang"
+  
   only:
     - main
     - merge_requests
@@ -50,7 +78,7 @@ test:pcap-files:
   
   # This job needs the binary from the build stage
   dependencies:
-    - build
+    - build:gcc
   
   before_script:
     - apt-get update -qq
@@ -114,3 +142,85 @@ code-quality:cppcheck:
   only:
     - main
     - merge_requests
+
+# ========================================
+# STAGE 4: SECURITY - MEMORY LEAK DETECTION
+# ========================================
+security:valgrind:
+  stage: security
+  image: gcc:latest
+  
+  dependencies:
+    - build:gcc
+  
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq libpcap-dev valgrind
+  
+  script:
+    - echo "🔍 Running Valgrind memory leak detection..."
+    - chmod +x analyseur
+    # Test basic functionality with --help
+    - echo "Testing basic execution..."
+    - valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --error-exitcode=0 --log-file=valgrind-help.txt ./analyseur --help || true
+    # If test files exist, test with them
+    - |
+      if [ -f tests/dhcp_test.pcap ]; then
+        echo "Testing with PCAP file..."
+        valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --error-exitcode=0 --log-file=valgrind-pcap.txt ./analyseur -o tests/dhcp_test.pcap -v 1
+      fi
+    - echo "📊 Valgrind results:"
+    - cat valgrind-*.txt | grep -E "(ERROR SUMMARY|definitely lost|indirectly lost|possibly lost)" || true
+    - echo "✅ Memory check completed!"
+  
+  artifacts:
+    paths:
+      - valgrind-*.txt
+    expire_in: 1 week
+    when: always
+  
+  # Allow failure initially while you fix memory issues
+  allow_failure: true
+  
+  only:
+    - main
+    - merge_requests
+
+# ========================================
+# STAGE 5: DEPLOY - RELEASE BUILDS
+# ========================================
+release:build:
+  stage: deploy
+  image: gcc:latest
+  
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq libpcap-dev make tar
+  
+  script:
+    - echo "🚀 Building optimized release version..."
+    - make clean
+    # Build with optimizations
+    - make CFLAGS="-O2 -Wall -Wextra -std=c99 -D_DEFAULT_SOURCE"
+    # Strip debug symbols for smaller binary
+    - strip analyseur
+    - ls -lh analyseur
+    # Create version info
+    - echo "Version ${CI_COMMIT_TAG}" > VERSION.txt
+    - echo "Built on $(date)" >> VERSION.txt
+    - echo "Commit: ${CI_COMMIT_SHA}" >> VERSION.txt
+    # Create tarball with binary and docs
+    - tar czf analyseur-${CI_COMMIT_TAG}.tar.gz analyseur VERSION.txt
+    - echo "✅ Release build complete!"
+    - echo "📦 Package: analyseur-${CI_COMMIT_TAG}.tar.gz"
+  
+  artifacts:
+    paths:
+      - analyseur-${CI_COMMIT_TAG}.tar.gz
+      - analyseur
+      - VERSION.txt
+    expire_in: never
+  
+  # Only run when you create a tag (e.g., v1.0.0)
+  only:
+    - tags
