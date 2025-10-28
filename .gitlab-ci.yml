@@ -26,11 +26,11 @@ build:gcc:
   
   # Build the project with GCC
   script:
-    - echo "🔨 Building project with GCC..."
+    - echo "Building project with GCC..."
     - make clean
     - make CC=gcc
     - ls -lh analyseur
-    - echo "✅ GCC build successful!"
+    - echo "GCC build successful!"
   
   # Save the binary for later stages
   artifacts:
@@ -53,11 +53,11 @@ build:clang:
     - apt-get install -y -qq libpcap-dev make
   
   script:
-    - echo "🔨 Building project with Clang..."
+    - echo "Building project with Clang..."
     - make clean
     - make CC=clang
     - ls -lh analyseur
-    - echo "✅ Clang build successful!"
+    - echo "Clang build successful!"
   
   artifacts:
     paths:
@@ -85,19 +85,19 @@ test:pcap-files:
     - apt-get install -y -qq libpcap-dev
   
   script:
-    - echo "🧪 Running tests with PCAP files..."
+    - echo "Running tests with PCAP files..."
     - chmod +x analyseur
     - |
       if [ -f tests/dhcp_test.pcap ]; then
-        echo "✓ Test file found, running tests..."
+        echo "Test file found, running tests..."
         ./analyseur -o tests/dhcp_test.pcap -v 3 | tee test_output.txt
-        echo "✅ PCAP test completed!"
-        echo "📊 Checking output..."
-        grep -i "ethernet" test_output.txt && echo "✓ Ethernet detected" || echo "⚠ No Ethernet found"
-        grep -i "ip" test_output.txt && echo "✓ IP detected" || echo "⚠ No IP found"
+        echo "PCAP test completed!"
+        echo "Checking output..."
+        grep -i "ethernet" test_output.txt && echo "Ethernet detected" || echo "No Ethernet found"
+        grep -i "ip" test_output.txt && echo "IP detected" || echo "No IP found"
       else
-        echo "⚠️  No test files found in tests/ directory"
-        echo "ℹ️  Skipping tests - add .pcap files to tests/ to enable testing"
+        echo "No test files found in tests/ directory"
+        echo "Skipping tests - add .pcap files to tests/ to enable testing"
         echo "Test skipped - no test files" > test_output.txt
       fi
   
@@ -126,9 +126,9 @@ code-quality:cppcheck:
     - apt-get install -y -qq cppcheck
   
   script:
-    - echo "🔍 Running static analysis..."
+    - echo "Running static analysis..."
     - cppcheck --enable=warning,performance,portability --error-exitcode=0 --inline-suppr *.c protocoles/*.c 2>&1 | tee cppcheck-report.txt
-    - echo "✅ Code quality check completed!"
+    - echo "Code quality check completed!"
   
   artifacts:
     paths:
@@ -157,7 +157,7 @@ security:valgrind:
     - apt-get install -y -qq libpcap-dev valgrind
   
   script:
-    - echo "🔍 Running Valgrind memory leak detection..."
+    - echo "Running Valgrind memory leak detection..."
     - chmod +x analyseur
     - echo "Testing basic execution..."
     - valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --error-exitcode=0 --log-file=valgrind-help.txt ./analyseur --help || true
@@ -166,9 +166,9 @@ security:valgrind:
         echo "Testing with PCAP file..."
         valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --error-exitcode=0 --log-file=valgrind-pcap.txt ./analyseur -o tests/dhcp_test.pcap -v 1
       fi
-    - echo "📊 Valgrind results:"
+    - echo "Valgrind results:"
     - cat valgrind-*.txt | grep -E "(ERROR SUMMARY|definitely lost|indirectly lost|possibly lost)" || true
-    - echo "✅ Memory check completed!"
+    - echo "Memory check completed!"
   
   artifacts:
     paths:
@@ -195,7 +195,7 @@ release:build:
     - apt-get install -y -qq libpcap-dev make tar
   
   script:
-    - echo "🚀 Building optimized release version..."
+    - echo "Building optimized release version..."
     - make clean
     - echo "Building with optimizations..."
     - make CFLAGS="-O2 -Wall -Wextra -std=c99 -D_DEFAULT_SOURCE"
@@ -208,8 +208,8 @@ release:build:
     - echo "Commit: ${CI_COMMIT_SHA}" >> VERSION.txt
     - echo "Creating tarball..."
     - tar czf analyseur-${CI_COMMIT_TAG}.tar.gz analyseur VERSION.txt
-    - echo "✅ Release build complete!"
-    - echo "📦 Package analyseur-${CI_COMMIT_TAG}.tar.gz"
+    - echo "Release build complete!"
+    - echo "Package created analyseur-${CI_COMMIT_TAG}.tar.gz"
   
   artifacts:
     paths:
