@@ -1,0 +1,42 @@
+name: CI Pipeline
+
+# When to run: on push to main or pull requests
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # Job 1: Build the project
+  build:
+    name: Build Analyseur
+    runs-on: ubuntu-latest
+    
+    steps:
+    # Step 1: Get the code
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    # Step 2: Install libpcap (dependency)
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libpcap-dev
+    
+    # Step 3: Compile the project
+    - name: Build project
+      run: make
+    
+    # Step 4: Check if binary was created
+    - name: Verify binary exists
+      run: |
+        test -f analyseur
+        echo "✅ Binary created successfully!"
+    
+    # Step 5: Save the binary for later
+    - name: Upload binary
+      uses: actions/upload-artifact@v3
+      with:
+        name: analyseur-binary
+        path: analyseur
