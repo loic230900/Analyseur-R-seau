@@ -3,6 +3,17 @@
 #include <sys/types.h>
 #include <netinet/tcp.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
+
+// Définition des constantes TCP flags pour Linux (compatibilité BSD)
+#ifndef TH_FIN
+#define TH_FIN  0x01
+#define TH_SYN  0x02
+#define TH_RST  0x04
+#define TH_PUSH 0x08
+#define TH_ACK  0x10
+#define TH_URG  0x20
+#endif
 
 int parse_tcp(const u_char *packet, int length, int verbosity, int indent, uint16_t *src_port, uint16_t *dst_port, uint8_t *flags){
     if(length < (int)sizeof(struct tcphdr)){
@@ -20,7 +31,9 @@ int parse_tcp(const u_char *packet, int length, int verbosity, int indent, uint1
         return 0;
     }
     //extraction des flags TCP (1 octet contenant les 6 bits de contrôle)
-    *flags = tcp->th_flags;
+    // Sur Linux, struct tcphdr utilise des bitfields, on doit les reconstruire manuellement
+    *flags = (tcp->fin) | (tcp->syn << 1) | (tcp->rst << 2) | 
+             (tcp->psh << 3) | (tcp->ack << 4) | (tcp->urg << 5);
 
     //verbosite 2
     if (verbosity == 2) {
@@ -46,10 +59,7 @@ int parse_tcp(const u_char *packet, int length, int verbosity, int indent, uint1
         printf("Acknowledgment Number: %u\n", ntohl(tcp->ack_seq));
         
         for(int i = 0; i < indent+2; i++) printf(" ");
-        printf("Data Offset: %u\n", tcp->doff);
-        
-        for(int i = 0; i < indent+2; i++) printf(" ");
-        printf("Reserved: %u\n", tcp->res1);
+        printf("Data Offset: %u (%d bytes)\n", tcp->doff, tcp_header_len);
         
         for(int i = 0; i < indent+2; i++) printf(" ");
         printf("Flags: 0x%02x (", *flags);
@@ -72,35 +82,30 @@ int parse_tcp(const u_char *packet, int length, int verbosity, int indent, uint1
         for(int i = 0; i < indent+2; i++) printf(" ");
         printf("Urgent Pointer: %u\n", ntohs(tcp->urg_ptr));
         
-        // Options et Padding (si présents)
-        if(tcp_header_len > (int)sizeof(struct tcphdr)){
-            // Le header TCP doit être un multiple de 4 octets
-            int padding = (4 - (tcp_header_len % 4)) % 4;
-            int options_len = tcp_header_len - (int)sizeof(struct tcphdr) - padding;
+        // Options TCP (si présentes)
+        if(tcp_header_len > 20){
+            // Taille fixe de l'en-tête TCP de base = 20 octets
+            int options_len = tcp_header_len - 20;
             
             if(options_len > 0) {
                 for(int i = 0; i < indent+2; i++) printf(" ");
                 printf("Options: %d bytes\n", options_len);
                 
-                // Afficher les options si on a la place
+                // Afficher les options en hexadécimal si on a la place
                 if(length >= tcp_header_len && options_len <= 40) {
-                    const u_char *options = packet + sizeof(struct tcphdr);
+                    const u_char *options = packet + 20;  // 20 = taille fixe en-tête TCP
+                    for(int i = 0; i < indent+2; i++) printf(" ");
+                    printf("  ");
                     for(int i = 0; i < options_len; i++) {
-                        if(i % 16 == 0 && i > 0) printf("\n");
-                        if(i % 16 == 0) {
+                        printf("%02x ", options[i]);
+                        if((i + 1) % 16 == 0 && i < options_len - 1) {
+                            printf("\n");
                             for(int j = 0; j < indent+2; j++) printf(" ");
                             printf("  ");
                         }
-                        printf("%02x ", options[i]);
                     }
-                    if(options_len > 0) printf("\n");
+                    printf("\n");
                 }
-            }
-            
-            // Padding
-            if(padding > 0) {
-                for(int i = 0; i < indent+2; i++) printf(" ");
-                printf("Padding: %d bytes\n", padding);
             }
         }
     }
