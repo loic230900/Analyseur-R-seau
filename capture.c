@@ -9,14 +9,7 @@
 #include <arpa/inet.h>
 #include "capture.h"
 #include "hexdump.h"
-#include "protocoles/ethernet.h"
-#include "protocoles/ipv4.h"
-#include "protocoles/ipv6.h"
-#include "protocoles/icmpv6.h"
-#include "protocoles/udp.h"
-#include "protocoles/dhcp.h"
-#include "protocoles/arp.h"
-#include "protocoles/tcp.h"
+#include "protocoles/protocoles.h"
 
 void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
     capture_args_t *capture = (capture_args_t *)args;
@@ -62,6 +55,9 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     else if (src_port == 443 || dst_port == 443) strcat(resume, " | HTTPS");
                     else if (src_port == 22 || dst_port == 22) strcat(resume, " | SSH");
                 }
+            }
+            else if(ip->protocol == IPPROTO_ICMP){
+                strcat(resume, " | ICMP");
             }
         }
         //IPV6 
@@ -158,6 +154,14 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     int tcp_len = parse_tcp(packet + offset, header->len - offset, verbosity, indent, &src_port, &dst_port, &flags);
                     if(tcp_len > 0) {
                         offset += tcp_len;
+                        indent += 2;
+                    }
+                }
+                //ICMP (IPv4)
+                else if(proto == IPPROTO_ICMP){
+                    int icmp_len = parse_icmp(packet + offset, header->len - offset, verbosity, indent);
+                    if(icmp_len > 0) {
+                        offset += icmp_len;
                         indent += 2;
                     }
                 }

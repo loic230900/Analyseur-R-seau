@@ -1,0 +1,17 @@
+#ifndef PROTOCOLES_ALL_H
+#define PROTOCOLES_ALL_H
+
+// Regroupe tous les en-têtes des protocoles du projet
+
+#include "ethernet.h"
+#include "ipv4.h"
+#include "ipv6.h"
+#include "udp.h"
+#include "tcp.h"
+#include "arp.h"
+#include "dhcp.h"
+#include "icmp.h"
+#include "icmpv6.h"
+#include "ndp.h"
+
+#endif /* PROTOCOLES_ALL_H */
