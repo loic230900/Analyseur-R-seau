@@ -13,5 +13,6 @@
 #include "icmp.h"
 #include "icmpv6.h"
 #include "ndp.h"
+#include "dns.h"
 
 #endif /* PROTOCOLES_ALL_H */

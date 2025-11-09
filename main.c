@@ -2,7 +2,9 @@
 #include <stdio.h>         
 #include <stdlib.h>
 #include <unistd.h>                
+#include <string.h>
 #include "capture.h"
+#include "protocoles/dns.h"
 #include <bits/getopt_core.h>
 
 
@@ -63,7 +65,15 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    //application du filtre BPF si fourni
+    // Traduction minimale d'alias, déléguée au module DNS
+    // On accepte 'dns' ou 'alldns' comme synonymes.
+    if (filter_exp) {
+        if (strcmp(filter_exp, "dns") == 0 || strcmp(filter_exp, "alldns") == 0) {
+            filter_exp = (char*)dns_bpf_all();
+        }
+    }
+
+    //application du filtre BPF si fourni (après éventuelle traduction)
     if (filter_exp) {
         struct bpf_program fp;
         bpf_u_int32 net = 0, mask = 0; 

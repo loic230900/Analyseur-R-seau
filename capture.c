@@ -39,6 +39,9 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     const struct udphdr *udp = (const struct udphdr *)(packet + offset);
                     uint16_t src_port = ntohs(udp->source);
                     uint16_t dst_port = ntohs(udp->dest);
+                    if (src_port == 53 || dst_port == 53){
+                        strcat(resume, " | DNS");
+                    }
                     if (src_port == 67 || src_port == 68 || dst_port == 67 || dst_port == 68){
                         strcat(resume, " | BOOTP/DHCP");
                     }
@@ -50,6 +53,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     const struct tcphdr *tcp = (const struct tcphdr *)(packet + offset);
                     uint16_t src_port = ntohs(tcp->source);
                     uint16_t dst_port = ntohs(tcp->dest);
+                    if (src_port == 53 || dst_port == 53) strcat(resume, " | DNS");
                     
                     if (src_port == 80 || dst_port == 80) strcat(resume, " | HTTP");
                     else if (src_port == 443 || dst_port == 443) strcat(resume, " | HTTPS");
@@ -82,6 +86,9 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     const struct udphdr *udp = (const struct udphdr *)(packet + offset);
                     uint16_t src_port = ntohs(udp->source);
                     uint16_t dst_port = ntohs(udp->dest);
+                    if (src_port == 53 || dst_port == 53){
+                        strcat(resume, " | DNS");
+                    }
                     if (src_port == 67 || src_port == 68 || dst_port == 67 || dst_port == 68){
                         strcat(resume, " | BOOTP/DHCP");
                     }
@@ -93,6 +100,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     const struct tcphdr *tcp = (const struct tcphdr *)(packet + offset);
                     uint16_t src_port = ntohs(tcp->source);
                     uint16_t dst_port = ntohs(tcp->dest);
+                    if (src_port == 53 || dst_port == 53) strcat(resume, " | DNS");
                     
                     if (src_port == 80 || dst_port == 80) strcat(resume, " | HTTP");
                     else if (src_port == 443 || dst_port == 443) strcat(resume, " | HTTPS");
@@ -141,6 +149,15 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     if(udp_len > 0) {
                         offset += udp_len;
                         indent += 2;
+                        /* DNS over UDP */
+                        if (src_port == 53 || dst_port == 53) {
+                            int is_resp; char qname[DNS_MAX_NAME_LEN];
+                            int dns_consumed = parse_dns(packet + offset, header->len - offset, verbosity, indent, 0, &is_resp, qname, sizeof(qname));
+                            if (dns_consumed > 0) {
+                                offset += dns_consumed;
+                                indent += 2;
+                            }
+                        }
                         //BOOTP/DHCP
                         if (src_port == 67 || src_port == 68 || dst_port == 67 || dst_port == 68){
                             parse_dhcp(packet + offset, header->len - offset, verbosity, indent);
@@ -155,6 +172,15 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     if(tcp_len > 0) {
                         offset += tcp_len;
                         indent += 2;
+                        /* DNS over TCP */
+                        if (src_port == 53 || dst_port == 53) {
+                            int is_resp; char qname[DNS_MAX_NAME_LEN];
+                            int dns_consumed = parse_dns(packet + offset, header->len - offset, verbosity, indent, 1, &is_resp, qname, sizeof(qname));
+                            if (dns_consumed > 0) {
+                                offset += dns_consumed;
+                                indent += 2;
+                            }
+                        }
                     }
                 }
                 //ICMP (IPv4)
@@ -195,6 +221,15 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     if(udp_len > 0) {
                         offset += udp_len;
                         indent += 2;
+                        /* DNS over UDP (IPv6) */
+                        if (src_port == 53 || dst_port == 53) {
+                            int is_resp; char qname[DNS_MAX_NAME_LEN];
+                            int dns_consumed = parse_dns(packet + offset, header->len - offset, verbosity, indent, 0, &is_resp, qname, sizeof(qname));
+                            if (dns_consumed > 0) {
+                                offset += dns_consumed;
+                                indent += 2;
+                            }
+                        }
                         //BOOTP/DHCP
                         if (src_port == 67 || src_port == 68 || dst_port == 67 || dst_port == 68){
                             parse_dhcp(packet + offset, header->len - offset, verbosity, indent);
@@ -209,6 +244,15 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     if(tcp_len > 0) {
                         offset += tcp_len;
                         indent += 2;
+                        /* DNS over TCP (IPv6) */
+                        if (src_port == 53 || dst_port == 53) {
+                            int is_resp; char qname[DNS_MAX_NAME_LEN];
+                            int dns_consumed = parse_dns(packet + offset, header->len - offset, verbosity, indent, 1, &is_resp, qname, sizeof(qname));
+                            if (dns_consumed > 0) {
+                                offset += dns_consumed;
+                                indent += 2;
+                            }
+                        }
                     }
                 }
                 //Hexdump pour verbosity 3
