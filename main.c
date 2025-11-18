@@ -5,6 +5,7 @@
 #include <string.h>
 #include "capture.h"
 #include "protocoles/dns.h"
+#include "filter.h"
 #include <bits/getopt_core.h>
 
 
@@ -65,38 +66,15 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Traduction minimale d'alias, déléguée au module DNS
-    // On accepte 'dns' ou 'alldns' comme synonymes.
+    // Application du filtre
     if (filter_exp) {
-        if (strcmp(filter_exp, "dns") == 0 || strcmp(filter_exp, "alldns") == 0) {
-            filter_exp = (char*)dns_bpf_all();
-        }
-    }
-
-    //application du filtre BPF si fourni (après éventuelle traduction)
-    if (filter_exp) {
-        struct bpf_program fp;
-        bpf_u_int32 net = 0, mask = 0; 
-        if(interface){
-            //obtention du masque et de l'adresse reseau
-            if(pcap_lookupnet(interface, &net, &mask, errbuf) == -1) {
-                fprintf(stderr, "Erreur lors de la récupération du réseau et du masque pour l'interface %s: %s\n", interface, errbuf);
-                net = 0;
-                mask = 0;
-            }
-        }
-        if(pcap_compile(handle, &fp, filter_exp, 0, net) == -1) {
-            fprintf(stderr, "Erreur lors de la compilation du filtre %s: %s\n", filter_exp, pcap_geterr(handle));
+        char applied[256];
+        int fres = filter_apply(handle, interface, filter_exp, applied, sizeof(applied));
+        if (fres != FILTER_OK) {
             pcap_close(handle);
             return 2;
         }
-        if(pcap_setfilter(handle, &fp) == -1) {
-            fprintf(stderr, "Erreur lors de l'application du filtre %s: %s\n", filter_exp, pcap_geterr(handle));
-            pcap_freecode(&fp);
-            pcap_close(handle);
-            return 2;
-        }
-    
+        fprintf(stderr, "Filtre BPF appliqué: %s\n", applied);
     }
 
     //boucle de capture des paquets

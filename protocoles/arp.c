@@ -68,3 +68,40 @@ int parse_arp(const u_char *packet, int length, int verbosity, int indent){
     }
     return 28; //taille fixe de l'en-tête ARP
 }
+
+int arp_v1_summary(const u_char *packet, int caplen, int offset_after_eth, char *resume){
+    if(caplen < offset_after_eth + 28) return 0;
+    const struct ether_arp *arp = (const struct ether_arp *)(packet + offset_after_eth);
+    uint16_t op = ntohs(arp->ea_hdr.ar_op);
+    if(op == ARPOP_REQUEST){
+        char sip[INET_ADDRSTRLEN], tip[INET_ADDRSTRLEN];
+        struct in_addr s,t;
+        memcpy(&s.s_addr, arp->arp_spa, 4);
+        memcpy(&t.s_addr, arp->arp_tpa, 4);
+        inet_ntop(AF_INET, &s, sip, sizeof(sip));
+        inet_ntop(AF_INET, &t, tip, sizeof(tip));
+        if(strlen(resume) < 240){
+            strcat(resume, " who-has ");
+            strcat(resume, tip);
+            strcat(resume, " tell ");
+            strcat(resume, sip);
+        }
+        return 1;
+    } else if(op == ARPOP_REPLY){
+        char sip[INET_ADDRSTRLEN]; struct in_addr s;
+        memcpy(&s.s_addr, arp->arp_spa, 4);
+        inet_ntop(AF_INET, &s, sip, sizeof(sip));
+        char smac[18];
+        snprintf(smac, sizeof(smac), "%02x:%02x:%02x:%02x:%02x:%02x",
+                 arp->arp_sha[0], arp->arp_sha[1], arp->arp_sha[2],
+                 arp->arp_sha[3], arp->arp_sha[4], arp->arp_sha[5]);
+        if(strlen(resume) < 240){
+            strcat(resume, " ");
+            strcat(resume, sip);
+            strcat(resume, " is-at ");
+            strcat(resume, smac);
+        }
+        return 1;
+    }
+    return 0;
+}

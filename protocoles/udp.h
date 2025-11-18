@@ -16,4 +16,7 @@
  */
 int parse_udp(const u_char *packet, int length, int verbosity, int indent, uint16_t *src_port, uint16_t *dst_port);
 
+/* Verbosité 1: ajoute ports génériques src>dst si pas application reconnue */
+int udp_v1_ports_summary(const u_char *packet, int caplen, int offset_transport, char *resume);
+
 #endif /* UDP_H */

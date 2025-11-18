@@ -23,4 +23,7 @@ int parse_icmp(const u_char *packet, int length, int verbosity, int indent);
  */
 const char* get_icmp_type_name(uint8_t type);
 
+/* Verbosité 1: ajoute EchoReq/EchoRep/Unreach/TimeEx/... */
+int icmp_v1_summary(const u_char *packet, int caplen, int offset_ip_start, char *resume);
+
 #endif /* ICMP_H */

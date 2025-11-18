@@ -76,3 +76,20 @@ int parse_icmp(const u_char *packet, int length, int verbosity, int indent) {
 
     return 8;  // En-tête ICMP de base = 8 octets
 }
+
+int icmp_v1_summary(const u_char *packet, int caplen, int offset_ip_start, char *resume){
+    if(caplen < offset_ip_start + 8) return 0;
+    const struct icmphdr *icmp = (const struct icmphdr *)(packet + offset_ip_start);
+    switch(icmp->type){
+        case ICMP_ECHO: if(strlen(resume)<240) strcat(resume, " EchoReq"); break;
+        case ICMP_ECHOREPLY: if(strlen(resume)<240) strcat(resume, " EchoRep"); break;
+        case ICMP_DEST_UNREACH: if(strlen(resume)<240) strcat(resume, " Unreach"); break;
+        case ICMP_TIME_EXCEEDED: if(strlen(resume)<240) strcat(resume, " TimeEx"); break;
+        case ICMP_REDIRECT: if(strlen(resume)<240) strcat(resume, " Redirect"); break;
+        default: {
+            char tmp[16]; snprintf(tmp,sizeof(tmp)," T%u",icmp->type);
+            if(strlen(resume)+strlen(tmp) < 255) strcat(resume,tmp);
+        }
+    }
+    return 1;
+}

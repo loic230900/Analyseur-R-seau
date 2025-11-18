@@ -13,4 +13,7 @@
  */
 void parse_dhcp(const u_char *packet, int length, int verbosity, int indent);
 
+/* Verbosité 1: ajoute Discover/Offer/Request/ACK/NAK/Release/Decline */
+int dhcp_v1_summary(const u_char *packet, int caplen, int offset_udp_payload, char *resume);
+
 #endif /* DHCP_H */

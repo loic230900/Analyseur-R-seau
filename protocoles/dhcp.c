@@ -239,3 +239,42 @@ void parse_dhcp(const u_char *packet, int length, int verbosity, int indent){
         }
     }
 }
+
+int dhcp_v1_summary(const u_char *packet, int caplen, int offset_udp_payload, char *resume){
+    if(caplen < offset_udp_payload + DHCP_FIXED_LEN + 4) return 0;
+    const Bootp_t *bootp = (const Bootp_t *)(packet + offset_udp_payload);
+    uint32_t cookie = ntohl(*(uint32_t*)bootp->bp_vend);
+    if(cookie != DHCP_MAGIC_COOKIE){
+        if(strlen(resume)<240) strcat(resume, " NoCookie");
+        return 1;
+    }
+    const u_char *p = bootp->bp_vend + 4;
+    int remain = caplen - (offset_udp_payload + DHCP_FIXED_LEN + 4);
+    while(remain > 2){
+        uint8_t code = *p++;
+        if(code == DHCP_OPTION_END) break;
+        if(code == 0){ remain--; continue; }
+        uint8_t len = *p++;
+        remain -= 2;
+        if(remain < len) break;
+        if(code == DHCP_OPTION_MSG_TYPE && len == 1){
+            uint8_t mt = *p;
+            if(strlen(resume)<240){
+                switch(mt){
+                    case DHCP_DISCOVER: strcat(resume," Discover"); break;
+                    case DHCP_OFFER: strcat(resume," Offer"); break;
+                    case DHCP_REQUEST: strcat(resume," Request"); break;
+                    case DHCP_DECLINE: strcat(resume," Decline"); break;
+                    case DHCP_ACK: strcat(resume," ACK"); break;
+                    case DHCP_NAK: strcat(resume," NAK"); break;
+                    case DHCP_RELEASE: strcat(resume," Release"); break;
+                    default: { char tmp[16]; snprintf(tmp,sizeof(tmp)," Type%u",mt); strcat(resume,tmp); }
+                }
+            }
+            break;
+        }
+        p += len;
+        remain -= len;
+    }
+    return 1;
+}

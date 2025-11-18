@@ -17,4 +17,7 @@
  */
 int parse_tcp(const u_char *packet, int length, int verbosity, int indent, uint16_t *src_port, uint16_t *dst_port, uint8_t *flags);
 
+/* Verbosité 1: ajoute SYN/SYN-ACK/FIN/RST/ACK/PSH-ACK */
+int tcp_v1_flags_summary(const u_char *packet, int caplen, int offset_transport, char *resume);
+
 #endif /* TCP_H */

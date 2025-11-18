@@ -1,6 +1,7 @@
 #include "udp.h"
 #include <stdio.h>
 #include <netinet/udp.h>
+#include <string.h>
 
 int parse_udp(const u_char *packet, int length, int verbosity, int indent, uint16_t *src_port, uint16_t *dst_port){
     if(length < (int)sizeof(struct udphdr)){
@@ -31,4 +32,13 @@ int parse_udp(const u_char *packet, int length, int verbosity, int indent, uint1
         printf("Checksum:         0x%04x\n", ntohs(udp->uh_sum));
     }
     return sizeof(struct udphdr);
+}
+
+int udp_v1_ports_summary(const u_char *packet, int caplen, int offset_transport, char *resume){
+    if(caplen < offset_transport + (int)sizeof(struct udphdr)) return 0;
+    const struct udphdr *udp = (const struct udphdr *)(packet + offset_transport);
+    uint16_t sp = ntohs(udp->source), dp = ntohs(udp->dest);
+    char tmp[32]; snprintf(tmp,sizeof(tmp)," %u>%u", sp, dp);
+    if(strlen(resume)+strlen(tmp) < 255) strcat(resume, tmp);
+    return 1;
 }

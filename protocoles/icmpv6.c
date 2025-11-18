@@ -76,3 +76,26 @@ int parse_icmpv6(const u_char *packet, int length, int verbosity, int indent) {
 
     return sizeof(struct icmp6_hdr);
 }
+
+int icmpv6_v1_summary(const u_char *packet, int caplen, int offset_ip6_start, char *resume){
+    if(caplen < offset_ip6_start + (int)sizeof(struct icmp6_hdr)) return 0;
+    const struct icmp6_hdr *icmp6 = (const struct icmp6_hdr *)(packet + offset_ip6_start);
+    uint8_t t = icmp6->icmp6_type;
+    const char *tag = NULL;
+    switch(t){
+        case ND_ROUTER_SOLICIT: tag = " RS"; break;
+        case ND_ROUTER_ADVERT: tag = " RA"; break;
+        case ND_NEIGHBOR_SOLICIT: tag = " NS"; break;
+        case ND_NEIGHBOR_ADVERT: tag = " NA"; break;
+        case ND_REDIRECT: tag = " Redirect"; break;
+        case ICMP6_ECHO_REQUEST: tag = " EchoReq"; break;
+        case ICMP6_ECHO_REPLY: tag = " EchoRep"; break;
+        case ICMP6_TIME_EXCEEDED: tag = " TimeEx"; break;
+        case ICMP6_DST_UNREACH: tag = " Unreach"; break;
+        case ICMP6_PARAM_PROB: tag = " ParamProb"; break;
+        default: {
+            static char buf[16]; snprintf(buf,sizeof(buf)," T%u", t); tag = buf; break; }
+    }
+    if(tag && strlen(resume)+strlen(tag) < 255) strcat(resume, tag);
+    return 1;
+}

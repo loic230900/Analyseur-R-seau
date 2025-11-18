@@ -29,4 +29,7 @@ int parse_icmpv6(const u_char *packet, int length, int verbosity, int indent);
  */
 const char* get_icmpv6_type_name(uint8_t type);
 
+/* Verbosité 1: ajoute EchoReq/EchoRep + RS/RA/NS/NA/Redirect */
+int icmpv6_v1_summary(const u_char *packet, int caplen, int offset_ip6_start, char *resume);
+
 #endif /* ICMPV6_H */

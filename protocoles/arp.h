@@ -29,4 +29,7 @@ struct ether_arp {
  */
 int parse_arp(const u_char *packet, int length, int verbosity, int indent);
 
+/* Verbosité 1: ajoute who-has / is-at dans resume. offset_after_eth = position de l'en-tête ARP */
+int arp_v1_summary(const u_char *packet, int caplen, int offset_after_eth, char *resume);
+
 #endif /* ARP_H */

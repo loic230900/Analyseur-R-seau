@@ -4,6 +4,7 @@
 #include <netinet/tcp.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <string.h>
 
 // Définition des constantes TCP flags pour Linux (compatibilité BSD)
 #ifndef TH_FIN
@@ -110,4 +111,18 @@ int parse_tcp(const u_char *packet, int length, int verbosity, int indent, uint1
         }
     }
     return tcp_header_len;
+}
+
+int tcp_v1_flags_summary(const u_char *packet, int caplen, int offset_transport, char *resume){
+    if(caplen < offset_transport + (int)sizeof(struct tcphdr)) return 0;
+    const struct tcphdr *tcp = (const struct tcphdr *)(packet + offset_transport);
+    unsigned int fl = (tcp->fin) | (tcp->syn<<1) | (tcp->rst<<2) | (tcp->psh<<3) | (tcp->ack<<4) | (tcp->urg<<5);
+    if(fl & 0x02){ // SYN
+        if(fl & 0x10){ if(strlen(resume)<240) strcat(resume, " SYN-ACK"); }
+        else if(strlen(resume)<240) strcat(resume, " SYN");
+    } else if(fl & 0x04){ if(strlen(resume)<240) strcat(resume, " RST"); }
+    else if(fl & 0x01){ if(strlen(resume)<240) strcat(resume, " FIN"); }
+    else if((fl & 0x08) && (fl & 0x10)){ if(strlen(resume)<240) strcat(resume, " PSH-ACK"); }
+    else if(fl & 0x10){ if(strlen(resume)<240) strcat(resume, " ACK"); }
+    return 1;
 }

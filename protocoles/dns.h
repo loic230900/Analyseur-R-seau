@@ -55,6 +55,9 @@ const char* dns_class_to_str(uint16_t klass);
 const char* dns_opcode_to_str(uint8_t opcode);
 const char* dns_rcode_to_str(uint8_t rcode);
 
+/* Verbosité 1: ajoute Query/Resp + QNAME simplifié */
+int dns_v1_summary(const u_char *packet, int caplen, int offset_dns_payload, char *resume);
+
 /**
  * Renvoie l'expression BPF pour capturer tout le trafic DNS (UDP et TCP, ports 53).
  */
