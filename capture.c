@@ -25,98 +25,112 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
 
     //Niveau 1: affichage très concis
     if (verbosity == 1) {
-        if(ethertype == ETHERTYPE_ARP){
+        if(ethertype == ETHERTYPE_ARP){ //ARP
             strcat(resume, "ARP");
-            arp_v1_summary(packet, header->caplen, 14, resume);
-        } else if(ethertype == ETHERTYPE_IP){
+            arp_v1_summary(packet, header->caplen, 14, resume); //ajout who-has / is-at 
+        } 
+        else if(ethertype == ETHERTYPE_IP){ //IPv4
             strcat(resume, "IPv4");
             if(header->caplen >= 14 + (int)sizeof(struct iphdr)){
+                //calcul de l'offset de la couche 4
                 const struct iphdr *ip = (const struct iphdr *)(packet + 14);
                 int ihl = ip->ihl * 4;
                 if(header->caplen >= 14 + ihl){
                     int l4off = 14 + ihl;
-                    if(ip->protocol == IPPROTO_ICMP){
+                    if(ip->protocol == IPPROTO_ICMP){ //ICMP
                         strcat(resume, " | ICMP");
                         icmp_v1_summary(packet, header->caplen, l4off, resume);
-                    } else if(ip->protocol == IPPROTO_TCP){
+                    } 
+                    else if(ip->protocol == IPPROTO_TCP){ //TCP
                         strcat(resume, " | TCP");
                         tcp_v1_flags_summary(packet, header->caplen, l4off, resume);
+                        // Applications courantes
                         if(header->caplen >= l4off + (int)sizeof(struct tcphdr)){
                             const struct tcphdr *tcp = (const struct tcphdr *)(packet + l4off);
                             uint16_t sp = ntohs(tcp->source), dp = ntohs(tcp->dest);
+                            // DNS
                             if(sp == 53 || dp == 53){
                                 strcat(resume, " | DNS");
                                 dns_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
                             }
-                            if(sp == 80 || dp == 80) strcat(resume, " | HTTP");
-                            else if(sp == 443 || dp == 443) strcat(resume, " | HTTPS");
-                            else if(sp == 22 || dp == 22) strcat(resume, " | SSH");
+                            else if(sp == 80 || dp == 80) strcat(resume, " | HTTP");
                         }
-                    } else if(ip->protocol == IPPROTO_UDP){
+                    } 
+                    else if(ip->protocol == IPPROTO_UDP){ //UDP
                         strcat(resume, " | UDP");
+                        // Applications courantes
                         if(header->caplen >= l4off + (int)sizeof(struct udphdr)){
                             const struct udphdr *udp = (const struct udphdr *)(packet + l4off);
                             uint16_t sp = ntohs(udp->source), dp = ntohs(udp->dest);
                             int udp_payload_off = l4off + 8;
                             int app_done = 0;
+                            // DNS  
                             if(sp == 53 || dp == 53){
                                 strcat(resume, " | DNS");
                                 dns_v1_summary(packet, header->caplen, udp_payload_off, resume);
                                 app_done = 1;
                             }
+                            // DHCP
                             if(sp == 67 || sp == 68 || dp == 67 || dp == 68){
                                 strcat(resume, " | DHCP");
                                 dhcp_v1_summary(packet, header->caplen, udp_payload_off, resume);
                                 app_done = 1;
                             }
-                            if(!app_done){
+                            if(!app_done){ // ports génériques si pas d'application reconnue
                                 udp_v1_ports_summary(packet, header->caplen, l4off, resume);
                             }
                         }
                     }
                 }
             }
-        } else if(ethertype == ETHERTYPE_IPV6){
+        } 
+        else if(ethertype == ETHERTYPE_IPV6){ //IPv6
             strcat(resume, "IPv6");
             if(header->caplen >= 14 + (int)sizeof(struct ip6_hdr)){
+                //calcul de l'offset de la couche 4
                 const struct ip6_hdr *ip6 = (const struct ip6_hdr *)(packet + 14);
                 int l4off = 14 + sizeof(struct ip6_hdr);
                 uint8_t nxt = ip6->ip6_nxt;
-                if(nxt == IPPROTO_ICMPV6){
+                if(nxt == IPPROTO_ICMPV6){  //ICMPv6
                     strcat(resume, " | ICMPv6");
                     icmpv6_v1_summary(packet, header->caplen, l4off, resume);
-                } else if(nxt == IPPROTO_TCP){
+                } 
+                else if(nxt == IPPROTO_TCP){ //TCP
                     strcat(resume, " | TCP");
                     tcp_v1_flags_summary(packet, header->caplen, l4off, resume);
+                    // Applications courantes
                     if(header->caplen >= l4off + (int)sizeof(struct tcphdr)){
                         const struct tcphdr *tcp = (const struct tcphdr *)(packet + l4off);
                         uint16_t sp = ntohs(tcp->source), dp = ntohs(tcp->dest);
-                        if(sp == 53 || dp == 53){
+                        // DNS
+                        if(sp == 53 || dp == 53){ 
                             strcat(resume, " | DNS");
                             dns_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
                         }
                         if(sp == 80 || dp == 80) strcat(resume, " | HTTP");
-                        else if(sp == 443 || dp == 443) strcat(resume, " | HTTPS");
-                        else if(sp == 22 || dp == 22) strcat(resume, " | SSH");
                     }
-                } else if(nxt == IPPROTO_UDP){
+                } 
+                else if(nxt == IPPROTO_UDP){ //UDP
                     strcat(resume, " | UDP");
+                    // Applications courantes
                     if(header->caplen >= l4off + (int)sizeof(struct udphdr)){
                         const struct udphdr *udp = (const struct udphdr *)(packet + l4off);
                         uint16_t sp = ntohs(udp->source), dp = ntohs(udp->dest);
-                        int udp_payload_off = l4off + 8;
-                        int app_done = 0;
+                        int udp_payload_off = l4off + 8; // taille en-tête UDP = 8 octets
+                        int app_done = 0; //indicateur application reconnue
+                        // DNS
                         if(sp == 53 || dp == 53){
                             strcat(resume, " | DNS");
                             dns_v1_summary(packet, header->caplen, udp_payload_off, resume);
                             app_done = 1;
                         }
+                        // DHCP
                         if(sp == 67 || sp == 68 || dp == 67 || dp == 68){
                             strcat(resume, " | DHCP");
                             dhcp_v1_summary(packet, header->caplen, udp_payload_off, resume);
                             app_done = 1;
                         }
-                        if(!app_done){
+                        if(!app_done){ // ports génériques si pas d'application reconnue
                             udp_v1_ports_summary(packet, header->caplen, l4off, resume);
                         }
                     }
@@ -143,7 +157,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
             parse_arp(packet + offset, header->len - offset, verbosity, indent);
         }
         //Analyse IPv4 ou IPv6
-        else if(ethertype == ETHERTYPE_IP){
+        else if(ethertype == ETHERTYPE_IP){ //IPv4
             uint8_t proto;
             int ip_hdr_len = parse_ipv4(packet + offset, header->len - offset, verbosity, indent, &proto);
             if(ip_hdr_len == 0) {
@@ -159,7 +173,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     if(udp_len > 0) {
                         offset += udp_len;
                         indent += 2;
-                        /* DNS over UDP */
+                        // DNS over UDP
                         if (src_port == 53 || dst_port == 53) {
                             int is_resp; char qname[DNS_MAX_NAME_LEN];
                             int dns_consumed = parse_dns(packet + offset, header->len - offset, verbosity, indent, 0, &is_resp, qname, sizeof(qname));
