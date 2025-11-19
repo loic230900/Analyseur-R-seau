@@ -4,8 +4,8 @@
 #include <net/ethernet.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
-#include <netinet/udp.h>
 #include <netinet/tcp.h>
+#include <netinet/udp.h>
 #include <arpa/inet.h>
 #include "capture.h"
 #include "hexdump.h"
@@ -20,7 +20,6 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
     //Déterminer le type de paquet pour affichage niveau 1
     const struct ether_header *eth_header = (struct ether_header *)packet;
     uint16_t ethertype = ntohs(eth_header->ether_type);
-    int offset = 14;
     char resume[256] = "";
 
     //Niveau 1: affichage très concis
@@ -35,7 +34,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                 //calcul de l'offset de la couche 4
                 const struct iphdr *ip = (const struct iphdr *)(packet + 14);
                 int ihl = ip->ihl * 4;
-                if(header->caplen >= 14 + ihl){
+                if((int)header->caplen >= 14 + ihl){
                     int l4off = 14 + ihl;
                     if(ip->protocol == IPPROTO_ICMP){ //ICMP
                         strcat(resume, " | ICMP");
@@ -45,13 +44,13 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                         strcat(resume, " | TCP");
                         tcp_v1_flags_summary(packet, header->caplen, l4off, resume);
                         // Applications courantes
-                        if(header->caplen >= l4off + (int)sizeof(struct tcphdr)){
+                        if((int)header->caplen >= l4off + (int)sizeof(struct tcphdr)){
                             const struct tcphdr *tcp = (const struct tcphdr *)(packet + l4off);
                             uint16_t sp = ntohs(tcp->source), dp = ntohs(tcp->dest);
                             // DNS
                             if(sp == 53 || dp == 53){
                                 strcat(resume, " | DNS");
-                                dns_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                                dns_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume, 1);
                             }
                             else if(sp == 80 || dp == 80) strcat(resume, " | HTTP");
                         }
@@ -59,7 +58,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     else if(ip->protocol == IPPROTO_UDP){ //UDP
                         strcat(resume, " | UDP");
                         // Applications courantes
-                        if(header->caplen >= l4off + (int)sizeof(struct udphdr)){
+                        if((int)header->caplen >= l4off + (int)sizeof(struct udphdr)){
                             const struct udphdr *udp = (const struct udphdr *)(packet + l4off);
                             uint16_t sp = ntohs(udp->source), dp = ntohs(udp->dest);
                             int udp_payload_off = l4off + 8;
@@ -67,7 +66,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             // DNS  
                             if(sp == 53 || dp == 53){
                                 strcat(resume, " | DNS");
-                                dns_v1_summary(packet, header->caplen, udp_payload_off, resume);
+                                dns_v1_summary(packet, header->caplen, udp_payload_off, resume, 0);
                                 app_done = 1;
                             }
                             // DHCP
@@ -99,13 +98,13 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     strcat(resume, " | TCP");
                     tcp_v1_flags_summary(packet, header->caplen, l4off, resume);
                     // Applications courantes
-                    if(header->caplen >= l4off + (int)sizeof(struct tcphdr)){
+                    if((int)header->caplen >= l4off + (int)sizeof(struct tcphdr)){
                         const struct tcphdr *tcp = (const struct tcphdr *)(packet + l4off);
                         uint16_t sp = ntohs(tcp->source), dp = ntohs(tcp->dest);
                         // DNS
                         if(sp == 53 || dp == 53){ 
                             strcat(resume, " | DNS");
-                            dns_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                            dns_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume, 1);
                         }
                         if(sp == 80 || dp == 80) strcat(resume, " | HTTP");
                     }
@@ -113,7 +112,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                 else if(nxt == IPPROTO_UDP){ //UDP
                     strcat(resume, " | UDP");
                     // Applications courantes
-                    if(header->caplen >= l4off + (int)sizeof(struct udphdr)){
+                    if((int)header->caplen >= l4off + (int)sizeof(struct udphdr)){
                         const struct udphdr *udp = (const struct udphdr *)(packet + l4off);
                         uint16_t sp = ntohs(udp->source), dp = ntohs(udp->dest);
                         int udp_payload_off = l4off + 8; // taille en-tête UDP = 8 octets
@@ -121,7 +120,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                         // DNS
                         if(sp == 53 || dp == 53){
                             strcat(resume, " | DNS");
-                            dns_v1_summary(packet, header->caplen, udp_payload_off, resume);
+                            dns_v1_summary(packet, header->caplen, udp_payload_off, resume, 0);
                             app_done = 1;
                         }
                         // DHCP

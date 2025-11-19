@@ -63,6 +63,17 @@ int dns_v1_summary(const u_char *packet, int caplen, int offset_dns_payload, cha
  */
 const char* dns_bpf_all(void);
 
+/**
+ * Résumé verbosité 1 pour DNS (Query/Resp + premier QNAME)
+ * @param packet            Pointeur vers le début du paquet complet.
+ * @param caplen            Longueur capturée totale.
+ * @param offset_dns_payload Offset du début DNS (après UDP/TCP header).
+ * @param resume            Buffer de sortie pour le résumé.
+ * @param is_tcp            1 si DNS sur TCP (préfixe longueur 2 octets), 0 sinon.
+ * @return                  1 en succès, 0 en échec.
+ */
+int dns_v1_summary(const u_char *packet, int caplen, int offset_dns_payload, char *resume, int is_tcp);
+
 /* Constantes type */
 #define DNS_TYPE_A       1
 #define DNS_TYPE_NS      2

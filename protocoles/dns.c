@@ -380,8 +380,6 @@ int parse_dns(const u_char *packet, int length, int verbosity, int indent,
          indent, "", qdcount, ancount, nscount, arcount);
     }
 
-    int printed_v2_summary = 0;
-
     /* Questions */
     for (int i = 0; i < (int)qdcount; i++) {
         int consumed;
@@ -395,23 +393,6 @@ int parse_dns(const u_char *packet, int length, int verbosity, int indent,
         }
         offset += consumed;
         if (offset > msg_len) return 0;
-
-        if (verbosity == 2 && i == 0 && !printed_v2_summary) {
-            const char *qname = (first_qname && first_qname[0]) ? first_qname : "";
-            if (qname[0]) {
-                printf("%*s[DNS] id=0x%04x %s QD=%u AN=%u NS=%u AR=%u q=%s %s\n",
-                       indent, "",
-                       id, (qr ? "Response" : "Query"),
-                       qdcount, ancount, nscount, arcount,
-                       qname, dns_type_to_str(qtype_tmp));
-            } else {
-                printf("%*s[DNS] id=0x%04x %s QD=%u AN=%u NS=%u AR=%u\n",
-                       indent, "",
-                       id, (qr ? "Response" : "Query"),
-                       qdcount, ancount, nscount, arcount);
-            }
-            printed_v2_summary = 1;
-        }
     }
 
     /* Answers */
@@ -459,47 +440,44 @@ int parse_dns(const u_char *packet, int length, int verbosity, int indent,
         if (offset > msg_len) return 0;
     }
 
-    /* Ajout verbosité 2 : résumé DNS une fois la première question décodée */
-    if (verbosity == 2 && !printed_v2_summary) {
-        const char *qr_str = qr ? "Resp" : "Query";
-        const char *opcode_str = dns_opcode_to_str(opcode);
-        const char *rcode_str  = dns_rcode_to_str(rcode);
-        /* first_qname peut avoir été rempli si passé non NULL */
-        printf("DNS: id=0x%04x %s opcode=%s rcode=%s qname=%s QD=%u AN=%u NS=%u AR=%u\n",
-               id, qr_str, opcode_str, rcode_str,
-               (first_qname && first_qname[0]) ? first_qname : "(none)",
-               qdcount, ancount, nscount, arcount);
-        printed_v2_summary = 1;
+    /* Verbosité 2 : résumé synthétique une fois tout parsé */
+    if (verbosity == 2) {
+        const char *qname = (first_qname && first_qname[0]) ? first_qname : "(none)";
+        printf("DNS: id=0x%04x %s opcode=%s rcode=%s QD=%u AN=%u NS=%u AR=%u q=%s\n",
+               id,
+               qr ? "Response" : "Query",
+               dns_opcode_to_str(opcode),
+               dns_rcode_to_str(rcode),
+               qdcount, ancount, nscount, arcount,
+               qname);
     }
-    if (verbosity == 2 && !printed_v2_summary) {
-        /* Cas sans question ou si non imprimé pour une raison quelconque */
-        printf("%*s[DNS] id=0x%04x %s QD=%u AN=%u NS=%u AR=%u\n",
-               indent, "",
-               id, (qr ? "Response" : "Query"),
-               qdcount, ancount, nscount, arcount);
-    }
-
 
     return total_consumed + offset;
 }
 
-int dns_v1_summary(const u_char *packet, int caplen, int offset_dns_payload, char *resume){
+int dns_v1_summary(const u_char *packet, int caplen, int offset_dns_payload, char *resume, int is_tcp){
+    /* Gérer préfixe TCP (2 octets longueur) */
+    if(is_tcp) {
+        if(caplen < offset_dns_payload + 2) return 0;
+        offset_dns_payload += 2;
+    }
+    
     if(caplen < offset_dns_payload + 12) return 0;
     const u_char *dns = packet + offset_dns_payload;
     uint16_t flags = (dns[2] << 8) | dns[3];
     int qr = (flags >> 15) & 0x1;
     if(strlen(resume) < 240) strcat(resume, qr ? " Resp" : " Query");
-    int pos = 12; char qname[128]; qname[0] = 0; int ql = 0;
-    while(caplen >= offset_dns_payload + pos + 1 && pos < 512){
-        uint8_t l = dns[pos];
-        if(l == 0){ pos++; break; }
-        if(l & 0xC0){ strcat(qname, "(cmp)"); pos += 2; break; }
-        if(ql && ql < (int)sizeof(qname)-1) qname[ql++]='.';
-        if(ql + l >= (int)sizeof(qname)-1){ strcat(qname, "..."); break; }
-        memcpy(qname+ql, dns+pos+1, l); ql += l; qname[ql]=0;
-        pos += l+1;
+    
+    /* Utiliser dns_decode_name pour gérer compression correctement */
+    char qname[DNS_MAX_NAME_LEN];
+    int consumed;
+    if(dns_decode_name(packet, caplen, offset_dns_payload, offset_dns_payload + 12,
+                       qname, sizeof(qname), &consumed)) {
+        if(qname[0] == 0 || qname[0] == '.') strcpy(qname, "(root)");
+        if(strlen(resume) + strlen(qname) + 1 < 255) { 
+            strcat(resume, " "); 
+            strcat(resume, qname); 
+        }
     }
-    if(qname[0]==0) strcpy(qname, "(root)");
-    if(strlen(resume) + strlen(qname) + 1 < 255){ strcat(resume, " "); strcat(resume, qname); }
     return 1;
 }
