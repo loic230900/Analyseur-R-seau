@@ -11,13 +11,13 @@ int parse_arp(const u_char *packet, int length, int verbosity, int indent){
     }
     //extraction des champs de l'en-tête ARP
     const struct ether_arp *arp = (const struct ether_arp *)packet;
-    uint16_t arp_op = ntohs(arp->ea_hdr.ar_op); //operation code
-    uint16_t arp_hrd = ntohs(arp->ea_hdr.ar_hrd); //hardware type
-    uint16_t arp_pro = ntohs(arp->ea_hdr.ar_pro); //protocol type
+    uint16_t opcode = ntohs(arp->ea_hdr.ar_op); //operation code
+    uint16_t hw_type = ntohs(arp->ea_hdr.ar_hrd); //hardware type
+    uint16_t proto_type = ntohs(arp->ea_hdr.ar_pro); //protocol type
 
     //string d'operation
-    const char *op_str = (arp_op == ARPOP_REQUEST) ? "Request" : 
-                        (arp_op == ARPOP_REPLY) ? "Reply" : "Unknown";
+    const char *op_str = (opcode == ARPOP_REQUEST) ? "Request" : 
+                        (opcode == ARPOP_REPLY) ? "Reply" : "Unknown";
 
     //Formatage des adresses MAC pour affichage
     char src_mac[18], dst_mac[18];
@@ -46,13 +46,13 @@ int parse_arp(const u_char *packet, int length, int verbosity, int indent){
         printf("ARP:\n");
         
         for(int i = 0; i < indent+2; i++) printf(" ");
-        printf("Operation:     %s (%u)\n", op_str, arp_op);
+        printf("Operation:     %s (%u)\n", op_str, opcode);
         
         for(int i = 0; i < indent+2; i++) printf(" ");
-        printf("Hardware Type: Ethernet (%u)\n", arp_hrd);
+        printf("Hardware Type: Ethernet (%u)\n", hw_type);
         
         for(int i = 0; i < indent+2; i++) printf(" ");
-        printf("Protocol Type: IPv4 (0x%04x)\n", arp_pro);
+        printf("Protocol Type: IPv4 (0x%04x)\n", proto_type);
         
         for(int i = 0; i < indent+2; i++) printf(" ");
         printf("Sender MAC:    %s\n", src_mac);

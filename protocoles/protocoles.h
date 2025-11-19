@@ -14,6 +14,8 @@
 #include "icmpv6.h"
 #include "ndp.h"
 #include "dns.h"
+#include "bootp.h"
+#include "http.h"
 
 
 #endif /* PROTOCOLES_ALL_H */

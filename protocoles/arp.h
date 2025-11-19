@@ -4,20 +4,15 @@
 #include <stdint.h>
 #include <pcap.h>
 #include <net/if_arp.h>
+#include <netinet/if_ether.h>  // Fournit struct ether_arp système
 
 //Types Ethernet
 #ifndef ETHERTYPE_ARP
 #define ETHERTYPE_ARP 0x0806
 #endif
 
-//strutcture ARP pour ethernet
-struct ether_arp {
-    struct arphdr ea_hdr;  //en-tête ARP standard
-    uint8_t arp_sha[6];  //sender MAC
-    uint8_t arp_spa[4];  //sender IP
-    uint8_t arp_tha[6];  //target MAC
-    uint8_t arp_tpa[4];  //target IP
-} __attribute__((packed)); 
+// struct ether_arp est maintenant fournie par <netinet/if_ether.h>
+// Elle contient déjà : ea_hdr, arp_sha, arp_spa, arp_tha, arp_tpa 
 
 /**
  * Analyse et affiche les champs de l'en-tête ARP.
