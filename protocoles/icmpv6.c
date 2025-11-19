@@ -41,6 +41,7 @@ int parse_icmpv6(const u_char *packet, int length, int verbosity, int indent) {
 
     // Sinon, traiter les messages ICMPv6 généraux
     if(verbosity == 2) {
+        for(int i = 0; i < indent; i++) printf(" ");
         printf("ICMPv6: type=%u (%s), code=%u\n", type, type_name, code);
     }
     else if(verbosity == 3) {

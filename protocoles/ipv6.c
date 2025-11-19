@@ -21,6 +21,7 @@ int parse_ipv6(const u_char *packet, int length, int verbosity, int indent, uint
 
     //verbosite 2 ligne synthethique
     if(verbosity == 2){
+        for(int i = 0; i < indent; i++) printf(" ");
         printf("IPv6: src=%s, dst=%s, next_header=%u, hop_limit=%u\n", src_ip, dst_ip, ip6->ip6_nxt, ip6->ip6_hlim);
     }
     //verbosite 3 detaillee

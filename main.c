@@ -81,10 +81,16 @@ int main(int argc, char *argv[]) {
     capture_args_t args;
     args.verbosity = verbosity;
 
-    if(pcap_loop(handle,-1, packet_handler, (u_char * )&args) == -1) {
+    int loop_ret = pcap_loop(handle,-1, packet_handler, (u_char * )&args);
+    if(loop_ret == -1) {
         fprintf(stderr, "Erreur lors de la capture des paquets: %s\n", pcap_geterr(handle));
         pcap_close(handle);
         return 2;
+    }
+    if(loop_ret == -2) {
+        fprintf(stderr, "Capture interrompue (breakloop)\n");
+    } else if(loop_ret == 0) {
+        fprintf(stderr, "Capture terminée normalement (code retour: %d)\n", loop_ret);
     }
     pcap_close(handle);
     

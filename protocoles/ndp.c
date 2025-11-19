@@ -28,6 +28,7 @@ int parse_ndp(const u_char *packet, int length, int verbosity, int indent) {
             inet_ntop(AF_INET6, &(ns->nd_ns_target), target_ip, sizeof(target_ip));
 
             if(verbosity == 2) {
+                for(int i = 0; i < indent; i++) printf(" ");
                 printf("NDP: Neighbor Solicitation - Who has %s?\n", target_ip);
             } else if(verbosity == 3) {
                 for(int i = 0; i < indent; i++) printf(" ");
@@ -64,6 +65,7 @@ int parse_ndp(const u_char *packet, int length, int verbosity, int indent) {
             int o_flag = (flags & 0x20000000) ? 1 : 0;
 
             if(verbosity == 2) {
+                for(int i = 0; i < indent; i++) printf(" ");
                 printf("NDP: Neighbor Advertisement - %s (R=%d,S=%d,O=%d)\n", 
                        target_ip, r_flag, s_flag, o_flag);
             } else if(verbosity == 3) {
@@ -88,6 +90,7 @@ int parse_ndp(const u_char *packet, int length, int verbosity, int indent) {
 
         case ND_ROUTER_SOLICIT: {
             if(verbosity == 2) {
+                for(int i = 0; i < indent; i++) printf(" ");
                 printf("NDP: Router Solicitation\n");
             } else if(verbosity == 3) {
                 for(int i = 0; i < indent; i++) printf(" ");
@@ -112,6 +115,7 @@ int parse_ndp(const u_char *packet, int length, int verbosity, int indent) {
                 (const struct nd_router_advert *)packet;
 
             if(verbosity == 2) {
+                for(int i = 0; i < indent; i++) printf(" ");
                 printf("NDP: Router Advertisement\n");
             } else if(verbosity == 3) {
                 for(int i = 0; i < indent; i++) printf(" ");
@@ -162,6 +166,7 @@ void parse_ndp_options(const u_char *options, int length, int verbosity, int ind
                              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
                     
                     if(verbosity == 2) {
+                        for(int i = 0; i < indent; i++) printf(" ");
                         printf("  Option: %s Link-Layer = %s\n", 
                                opt_type == ND_OPT_SOURCE_LINKADDR ? "Source" : "Target",
                                mac_str);

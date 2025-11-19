@@ -38,6 +38,7 @@ int parse_icmp(const u_char *packet, int length, int verbosity, int indent) {
 
     // Verbosité 2 (synthétique, une ligne)
     if (verbosity == 2) {
+        for(int i = 0; i < indent; i++) printf(" ");
         printf("ICMP: type=%u (%s), code=%u\n", type, type_name, code);
     }
     // Verbosité 3 (détaillée)

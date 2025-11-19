@@ -29,6 +29,7 @@ int parse_ipv4(const u_char *packet, int length, int verbosity, int indent, uint
 
     // verbosite 2 ligne synthethique
     if (verbosity == 2) {
+        for(int i = 0; i < indent; i++) printf(" ");
         printf("IPv4: src=%s, dst=%s, proto=%u, ttl=%u\n", src_ip, dst_ip, ip->protocol, ip->ttl);
     }
     // verbosite 3 detaillee

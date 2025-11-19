@@ -442,6 +442,7 @@ int parse_dns(const u_char *packet, int length, int verbosity, int indent,
 
     /* Verbosité 2 : résumé synthétique une fois tout parsé */
     if (verbosity == 2) {
+        for(int i = 0; i < indent; i++) printf(" ");
         const char *qname = (first_qname && first_qname[0]) ? first_qname : "(none)";
         printf("DNS: id=0x%04x %s opcode=%s rcode=%s QD=%u AN=%u NS=%u AR=%u q=%s\n",
                id,

@@ -92,6 +92,7 @@ void parse_dhcp(const u_char *packet, int length, int verbosity, int indent){
             }
         }
         //affichage résumé
+        for(int i = 0; i < indent; i++) printf(" ");
         printf("DHCP: Message=%s, Xid=0x%08x, YourIP=%s, ServerIP=%s, MAC=%s\n",
                 msg_type_str, xid, yiaddr_str, siaddr_str, mac);
     }

@@ -38,6 +38,7 @@ int parse_arp(const u_char *packet, int length, int verbosity, int indent){
 
     //verbosite 2 ligne synthethique
     if(verbosity == 2){
+        for(int i = 0; i < indent; i++) printf(" ");
         printf("ARP %s: %s (%s) -> %s (%s)\n", op_str, src_ip, src_mac, dst_ip, dst_mac);
     }
     //verbosite 3 detaillee

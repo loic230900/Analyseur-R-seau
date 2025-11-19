@@ -1,5 +1,8 @@
 #ifndef HTTP_H
 #define HTTP_H
+#ifndef u_char
+typedef unsigned char u_char;
+#endif
 
 #include <stdint.h>
 #include <pcap.h>
@@ -12,11 +15,10 @@
  * @param length    Longeur du payload TCP disponible.
  * @param verbosity Niveau de verbosité (2 ou 3).
  * @param indent    Indentation en espace pour l'affichage.
- * @param is_request (sortie) 1 si requete HTTP, 0 si réponse si (peut etre NULL) 
  * @return          Nombre d'octets consommés (headers + body si détecté),
  *                  ou 0 si ce n'est pas du HTTP ou erreur.
  */
-int parse_http(const u_char *packet, int length, int indent, int *is_request);
+int parse_http(const u_char *packet, int length, int verbosity, int indent);
 
 /**
  * Résumé verbosité 1 pour HTTP (méthode+URI ou code status).

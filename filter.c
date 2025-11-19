@@ -8,6 +8,9 @@ const char* filter_translate_alias(const char *user_expr) {
     if (strcmp(user_expr, "dns") == 0 || strcmp(user_expr, "alldns") == 0) {
         return dns_bpf_all();
     }
+    if (strcmp(user_expr, "http") == 0) {
+        return "tcp port 80";
+    }
     return user_expr;
 }
 

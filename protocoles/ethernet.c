@@ -35,6 +35,7 @@ int parse_ethernet(const u_char *packet, int length, int verbosity, int indent, 
     
     //verbosite 2 ligne synthethique
     if(verbosity == 2){
+        for(int i = 0; i < indent; i++) printf(" ");
         if(type_name) {
             printf("Ethernet: src=%s dst=%s type=0x%04x (%s)\n", src_mac, dst_mac, *ethertype, type_name);
         } else {

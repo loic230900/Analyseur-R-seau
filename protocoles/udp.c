@@ -16,6 +16,7 @@ int parse_udp(const u_char *packet, int length, int verbosity, int indent, uint1
     //verbosite 2 
     if (verbosity == 2) {
         // Niveau 2 : ligne synthétique
+        for(int i = 0; i < indent; i++) printf(" ");
         printf("UDP: src_port=%u, dst_port=%u, length=%u\n", *src_port, *dst_port, udp_length);
     }
     //verbosite 3
