@@ -8,7 +8,7 @@ CFLAGS = -Wall -Wextra -std=c99 -D_DEFAULT_SOURCE -g
 
 # Fichiers objets
 OBJS = main.o capture.o hexdump.o filter.o \
-	ethernet.o arp.o ipv4.o ipv6.o icmp.o icmpv6.o ndp.o udp.o dhcp.o tcp.o dns.o http.o
+	ethernet.o arp.o ipv4.o ipv6.o icmp.o icmpv6.o ndp.o udp.o dhcp.o tcp.o dns.o http.o smtp.o
 
 # Règle par défaut
 $(TARGET): $(OBJS)

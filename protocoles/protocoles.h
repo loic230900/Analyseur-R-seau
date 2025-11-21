@@ -16,6 +16,7 @@
 #include "dns.h"
 #include "bootp.h"
 #include "http.h"
+#include "smtp.h"
 
 
 #endif /* PROTOCOLES_ALL_H */

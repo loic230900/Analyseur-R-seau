@@ -38,9 +38,19 @@ int parse_tcp(const u_char *packet, int length, int verbosity, int indent, uint1
 
     //verbosite 2
     if (verbosity == 2) {
-        printf("TCP: src_port=%u, dst_port=%u, seq=%u, ack=%u, flags=0x%02x\n",
+        for(int i = 0; i < indent; i++) printf(" ");
+        printf("TCP: src_port=%u, dst_port=%u, seq=%u, ack=%u, flags=0x%02x (",
                *src_port, *dst_port, 
                ntohl(tcp->seq), ntohl(tcp->ack_seq), *flags);
+        //affichage des flags en texte
+        int first = 1;
+        if(*flags & TH_FIN) { if(!first) printf(","); printf("FIN"); first = 0; }
+        if(*flags & TH_SYN) { if(!first) printf(","); printf("SYN"); first = 0; }
+        if(*flags & TH_RST) { if(!first) printf(","); printf("RST"); first = 0; }
+        if(*flags & TH_PUSH) { if(!first) printf(","); printf("PSH"); first = 0; }
+        if(*flags & TH_ACK) { if(!first) printf(","); printf("ACK"); first = 0; }
+        if(*flags & TH_URG) { if(!first) printf(","); printf("URG"); first = 0; }
+        printf(")\n");
     }
     //verbosite 3
     else if (verbosity == 3) {

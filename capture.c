@@ -47,12 +47,23 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                         if((int)header->caplen >= l4off + (int)sizeof(struct tcphdr)){
                             const struct tcphdr *tcp = (const struct tcphdr *)(packet + l4off);
                             uint16_t sp = ntohs(tcp->source), dp = ntohs(tcp->dest);
+                            int app_done = 0;
                             // DNS
                             if(sp == 53 || dp == 53){
                                 strcat(resume, " | DNS");
                                 dns_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume, 1);
+                                app_done = 1;
                             }
-                            else if(sp == 80 || dp == 80) strcat(resume, " | HTTP");
+                            // HTTP
+                            if(!app_done && (sp == 80 || dp == 80)){
+                                http_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                                app_done = 1;
+                            }
+                            // SMTP
+                            if(!app_done && (sp == 25 || dp == 25 || sp == 587 || dp == 587)){
+                                smtp_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                                app_done = 1;
+                            }
                         }
                     } 
                     else if(ip->protocol == IPPROTO_UDP){ //UDP
@@ -101,12 +112,23 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     if((int)header->caplen >= l4off + (int)sizeof(struct tcphdr)){
                         const struct tcphdr *tcp = (const struct tcphdr *)(packet + l4off);
                         uint16_t sp = ntohs(tcp->source), dp = ntohs(tcp->dest);
+                        int app_done = 0;
                         // DNS
                         if(sp == 53 || dp == 53){ 
                             strcat(resume, " | DNS");
                             dns_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume, 1);
+                            app_done = 1;
                         }
-                        if(sp == 80 || dp == 80) strcat(resume, " | HTTP");
+                        // HTTP
+                        if(!app_done && (sp == 80 || dp == 80)){
+                            http_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                            app_done = 1;
+                        }
+                        // SMTP
+                        if(!app_done && (sp == 25 || dp == 25 || sp == 587 || dp == 587)){
+                            smtp_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                            app_done = 1;
+                        }
                     }
                 } 
                 else if(nxt == IPPROTO_UDP){ //UDP
@@ -204,6 +226,22 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                                 indent += 2;
                             }
                         }
+                        /* HTTP */
+                        if (src_port == 80 || dst_port == 80){
+                            int http_consumed = parse_http(packet + offset, header->len - offset, verbosity, indent);
+                            if (http_consumed > 0) {
+                                offset += http_consumed;
+                                indent += 2;
+                            }
+                        }
+                        /* SMTP */
+                        if (src_port == 25 || dst_port == 25 || src_port == 587 || dst_port == 587){
+                            int smtp_consumed = parse_smtp(packet + offset, header->len - offset, verbosity, indent);
+                            if (smtp_consumed > 0) {
+                                offset += smtp_consumed;
+                                indent += 2;
+                            }
+                        }
                     }
                 }
                 //ICMP (IPv4)
@@ -273,6 +311,22 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             int dns_consumed = parse_dns(packet + offset, header->len - offset, verbosity, indent, 1, &is_resp, qname, sizeof(qname));
                             if (dns_consumed > 0) {
                                 offset += dns_consumed;
+                                indent += 2;
+                            }
+                        }
+                        /* HTTP */
+                        if (src_port == 80 || dst_port == 80){
+                            int http_consumed = parse_http(packet + offset, header->len - offset, verbosity, indent);
+                            if (http_consumed > 0) {
+                                offset += http_consumed;
+                                indent += 2;
+                            }
+                        }
+                        /* SMTP */
+                        if (src_port == 25 || dst_port == 25 || src_port == 587 || dst_port == 587){
+                            int smtp_consumed = parse_smtp(packet + offset, header->len - offset, verbosity, indent);
+                            if (smtp_consumed > 0) {
+                                offset += smtp_consumed;
                                 indent += 2;
                             }
                         }
