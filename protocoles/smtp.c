@@ -1,55 +1,12 @@
 #include "smtp.h"
+#include "../util/textutils.h"
 #include "../hexdump.h"
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
 
-/**
- * Trouve la fin de ligne (\r\n ou \n) dans les données
- * @param data: pointeur vers les données
- * @param offset: offset de départ pour la recherche
- * @param max_len: longueur maximale des données
- * @return offset de la fin de ligne, -1 si non trouvé
- */
-static int find_line_end(const u_char *data, int offset, int max_len) {
-    for (int i = offset; i < max_len - 1; i++) {
-        if (data[i] == '\r' && data[i+1] == '\n')
-            return i;
-    }
-    for (int i = offset; i < max_len; i++) {
-        if (data[i] == '\n')
-            return i;
-    }
-    return -1;
-}
-
-/**
- * Extrait une ligne des données SMTP sans les terminaisons de ligne
- * @param data: pointeur vers les données
- * @param offset: offset de départ pour l'extraction
- * @param max_len: longueur maximale des données
- * @param out: buffer de sortie pour la ligne extraite
- * @param out_len: taille du buffer de sortie
- * @return nouvel offset après la ligne extraite, -1 en cas d'erreur
- */
-static int extract_line(const u_char *data, int offset, int max_len, char *out, int out_len) {
-    int end = find_line_end(data, offset, max_len);
-    if (end < 0)
-        return -1;
-
-    int line_len = end - offset;
-    if (line_len >= out_len)
-        line_len = out_len - 1;
-    
-    memcpy(out, data + offset, line_len);
-    out[line_len] = '\0';
-
-    // Avancer après CRLF ou LF
-    if (end + 1 < max_len && data[end] == '\r' && data[end+1] == '\n')
-        return end + 2;
-    return end + 1;
-}
+/* Helpers de parsing de lignes déplacés dans textutils.c */
 
 /**
  * Vérifie si une ligne est une commande SMTP
@@ -109,7 +66,7 @@ static int parse_smtp_command(const u_char *packet, int length, int verbosity, i
     int offset = 0;
 
     // Extraction de la ligne de commande
-    int next = extract_line(packet, offset, length, line, sizeof(line));
+    int next = text_extract_line(packet, offset, length, line, sizeof(line));
     if (next < 0)
         return 0;
 
@@ -179,7 +136,7 @@ static int parse_smtp_response(const u_char *packet, int length, int verbosity, 
     int offset = 0;
 
     // Extraction de la ligne de réponse
-    int next = extract_line(packet, offset, length, line, sizeof(line));
+    int next = text_extract_line(packet, offset, length, line, sizeof(line));
     if (next < 0)
         return 0;
 
@@ -218,7 +175,7 @@ static int parse_smtp_response(const u_char *packet, int length, int verbosity, 
     // Les réponses multi-lignes (code suivi de '-')
     // Par exemple : "250-smtp.example.com\r\n250 SIZE 35882577\r\n"
     while (offset < length) {
-        next = extract_line(packet, offset, length, line, sizeof(line));
+        next = text_extract_line(packet, offset, length, line, sizeof(line));
         if (next < 0) break;
         
         // Si la ligne commence par le même code suivi de '-', c'est une continuation
@@ -317,7 +274,7 @@ int smtp_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
     int smtp_len = caplen - offset_tcp_payload;
 
     char line[128];
-    int end = find_line_end(smtp, 0, smtp_len);
+    int end = text_find_line_end(smtp, 0, smtp_len);
     if (end < 0 || end > 127)
         return 0;
 

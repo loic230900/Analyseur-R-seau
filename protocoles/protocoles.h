@@ -17,6 +17,7 @@
 #include "bootp.h"
 #include "http.h"
 #include "smtp.h"
+#include "../util/textutils.h"
 
 
 #endif /* PROTOCOLES_ALL_H */
