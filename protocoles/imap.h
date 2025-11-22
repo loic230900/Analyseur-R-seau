@@ -26,7 +26,7 @@ int parse_imap(const u_char *packet, int length, int verbosity, int indent);
  * @param resume              Buffer résumé.
  * @return 1 si succès, 0 sinon.
  */
-int imap_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, int resume);
+int imap_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, char *resume);
 
 /* Ports  IMAP */
 #define IMAP_PORT_PLAIN 143
