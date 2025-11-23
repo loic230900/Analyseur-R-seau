@@ -91,7 +91,8 @@ int parse_imap(const u_char *packet, int length, int verbosity, int indent){
     if(verbosity >= 2){
         for(int i=0;i<indent;i++) printf(" ");
         printf("IMAP:\n");
-    
+    }
+
     while(offset < length){
         char line[512];
         int next = text_extract_line(packet, offset, length, line, sizeof(line));
@@ -187,6 +188,7 @@ int parse_imap(const u_char *packet, int length, int verbosity, int indent){
             break;
         }
     }
+    // S'assurer qu'on retourne toujours une valeur
     return consumed;
 }
 
@@ -239,5 +241,3 @@ int imap_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
     }
     return 0;
 }
-
-

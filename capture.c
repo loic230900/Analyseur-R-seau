@@ -1,10 +1,10 @@
+#include <netinet/tcp.h>
 #include <stdio.h>
 #include <string.h>
 #include <pcap.h>
 #include <net/ethernet.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>
-#include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <arpa/inet.h>
 #include "capture.h"
@@ -66,17 +66,19 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             }
                             // IMAP
                             if(!app_done && (sp == 143 || dp == 143)){
-                                int payload_offset = l4off + tcp->doff*4;
-                                if(header->caplen > payload_offset && header->caplen - payload_offset > 3){
-                                    if(imap_v1_summary(packet, header->caplen, payload_offset, resume)){
-                                        app_done = 1;
-                                    }
+                                int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
+                                if(tcp_payload_len > 0){
+                                    imap_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                                    app_done = 1;
                                 }
                             }
                             // IMAPS (TLS sur 993)
                             if(!app_done && (sp == 993 || dp == 993)){
-                                strcat(resume, " | IMAPS");
-                                app_done = 1;
+                                int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
+                                if(tcp_payload_len > 0){
+                                    imap_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                                    app_done = 1;
+                                }
                             }
                         }
                     } 
@@ -145,17 +147,19 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                         }
                         // IMAP
                         if(!app_done && (sp == 143 || dp == 143)){
-                            int payload_offset = l4off + tcp->doff*4;
-                            if(header->caplen > payload_offset && header->caplen - payload_offset > 3){
-                                if(imap_v1_summary(packet, header->caplen, payload_offset, resume)){
-                                    app_done = 1;
-                                }
+                            int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
+                            if(tcp_payload_len > 0){
+                                imap_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                                app_done = 1;
                             }
                         }
                         // IMAPS (TLS sur 993)
                         if(!app_done && (sp == 993 || dp == 993)){
-                            strcat(resume, " | IMAPS");
-                            app_done = 1;
+                            int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
+                            if(tcp_payload_len > 0){
+                                imap_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                                app_done = 1;
+                            }
                         }
                     }
                 } 
@@ -281,7 +285,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                         /* IMAPS (TLS sur 993) */
                         if (src_port == 993 || dst_port == 993){
                             // Tentative identification TLS record
-                            if(header->len > offset + 5){
+                            if(header->len > (bpf_u_int32)(offset + 5)){
                                 const u_char *tls = packet + offset;
                                 if(tls[0] == 0x16 && tls[1] == 0x03){
                                     for(int i=0;i<indent;i++) printf(" ");
@@ -391,7 +395,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                         /* IMAPS (TLS sur 993) */
                         if (src_port == 993 || dst_port == 993){
                             // Tentative identification TLS record
-                            if(header->len > offset + 5){
+                            if(header->len > (bpf_u_int32)(offset + 5)){
                                 const u_char *tls = packet + offset;
                                 if(tls[0] == 0x16 && tls[1] == 0x03){
                                     for(int i=0;i<indent;i++) printf(" ");
