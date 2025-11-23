@@ -2,7 +2,7 @@
 #define IMAP_H
 
 #ifndef u_char
-#define u_char unsigned char
+typedef unsigned char u_char;
 #endif
 
 #include <stdint.h>
@@ -29,8 +29,8 @@ int parse_imap(const u_char *packet, int length, int verbosity, int indent);
 int imap_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, char *resume);
 
 /* Ports  IMAP */
-#define IMAP_PORT_PLAIN 143
-#define IMAP_PORT_SSL   993
+#define IMAP_PORT_PLAIN 143  // IMAP non-chiffré
+#define IMAP_PORT_SSL   993  // IMAPS (IMAP over TLS/SSL)
 
 /* Commandes IMAP */
 #define IMAP_CMD_LOGIN      "LOGIN"

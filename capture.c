@@ -64,6 +64,20 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                                 smtp_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
                                 app_done = 1;
                             }
+                            // IMAP
+                            if(!app_done && (sp == 143 || dp == 143)){
+                                int payload_offset = l4off + tcp->doff*4;
+                                if(header->caplen > payload_offset && header->caplen - payload_offset > 3){
+                                    if(imap_v1_summary(packet, header->caplen, payload_offset, resume)){
+                                        app_done = 1;
+                                    }
+                                }
+                            }
+                            // IMAPS (TLS sur 993)
+                            if(!app_done && (sp == 993 || dp == 993)){
+                                strcat(resume, " | IMAPS");
+                                app_done = 1;
+                            }
                         }
                     } 
                     else if(ip->protocol == IPPROTO_UDP){ //UDP
@@ -127,6 +141,20 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                         // SMTP
                         if(!app_done && (sp == 25 || dp == 25 || sp == 587 || dp == 587)){
                             smtp_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                            app_done = 1;
+                        }
+                        // IMAP
+                        if(!app_done && (sp == 143 || dp == 143)){
+                            int payload_offset = l4off + tcp->doff*4;
+                            if(header->caplen > payload_offset && header->caplen - payload_offset > 3){
+                                if(imap_v1_summary(packet, header->caplen, payload_offset, resume)){
+                                    app_done = 1;
+                                }
+                            }
+                        }
+                        // IMAPS (TLS sur 993)
+                        if(!app_done && (sp == 993 || dp == 993)){
+                            strcat(resume, " | IMAPS");
                             app_done = 1;
                         }
                     }
@@ -242,6 +270,28 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                                 indent += 2;
                             }
                         }
+                        /* IMAP */
+                        if (src_port == 143 || dst_port == 143){
+                            int imap_consumed = parse_imap(packet + offset, header->len - offset, verbosity, indent);
+                            if (imap_consumed > 0) {
+                                offset += imap_consumed;
+                                indent += 2;
+                            }
+                        }
+                        /* IMAPS (TLS sur 993) */
+                        if (src_port == 993 || dst_port == 993){
+                            // Tentative identification TLS record
+                            if(header->len > offset + 5){
+                                const u_char *tls = packet + offset;
+                                if(tls[0] == 0x16 && tls[1] == 0x03){
+                                    for(int i=0;i<indent;i++) printf(" ");
+                                    printf("IMAPS (TLS Handshake) – content not parsed\n");
+                                } else {
+                                    for(int i=0;i<indent;i++) printf(" ");
+                                    printf("IMAPS (Encrypted or Non-handshake segment)\n");
+                                }
+                            }
+                        }
                     }
                 }
                 //ICMP (IPv4)
@@ -328,6 +378,28 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             if (smtp_consumed > 0) {
                                 offset += smtp_consumed;
                                 indent += 2;
+                            }
+                        }
+                        /* IMAP */
+                        if (src_port == 143 || dst_port == 143){
+                            int imap_consumed = parse_imap(packet + offset, header->len - offset, verbosity, indent);
+                            if (imap_consumed > 0) {
+                                offset += imap_consumed;
+                                indent += 2;
+                            }
+                        }
+                        /* IMAPS (TLS sur 993) */
+                        if (src_port == 993 || dst_port == 993){
+                            // Tentative identification TLS record
+                            if(header->len > offset + 5){
+                                const u_char *tls = packet + offset;
+                                if(tls[0] == 0x16 && tls[1] == 0x03){
+                                    for(int i=0;i<indent;i++) printf(" ");
+                                    printf("IMAPS (TLS Handshake) – content not parsed\n");
+                                } else {
+                                    for(int i=0;i<indent;i++) printf(" ");
+                                    printf("IMAPS (Encrypted or Non-handshake segment)\n");
+                                }
                             }
                         }
                     }
