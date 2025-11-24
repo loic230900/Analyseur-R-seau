@@ -18,6 +18,7 @@
 #include "http.h"
 #include "smtp.h"
 #include "imap.h"
+#include "pop3.h"
 #include "../util/textutils.h"
 
 

@@ -81,6 +81,27 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                                     app_done = 1;
                                 }
                             }
+                            // POP3
+                            if(!app_done && (sp == POP3_PORT_PLAIN || dp == POP3_PORT_PLAIN)){
+                                pop3_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                                app_done = 1;
+                            }
+                            // POP3S (TLS sur 995)
+                            if(!app_done && (sp == POP3_PORT_SSL || dp == POP3_PORT_SSL)){
+                                int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
+                                if(tcp_payload_len > 0){
+                                    // Tentative identification TLS record
+                                    if(header->caplen > (bpf_u_int32)(l4off + tcp->doff*4 + 5)){
+                                        const u_char *tls = packet + l4off + tcp->doff*4;
+                                        if(tls[0] == 0x16 && tls[1] == 0x03){
+                                            strcat(resume, " | POP3S (TLS)");
+                                        } else {
+                                            pop3_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                                        }
+                                    }
+                                    app_done = 1;
+                                }
+                            }
                         }
                     } 
                     else if(ip->protocol == IPPROTO_UDP){ //UDP
@@ -160,6 +181,27 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
                             if(tcp_payload_len > 0){
                                 imap_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                                app_done = 1;
+                            }
+                        }
+                        // POP3
+                        if(!app_done && (sp == POP3_PORT_PLAIN || dp == POP3_PORT_PLAIN)){
+                            pop3_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                            app_done = 1;
+                        }
+                        // POP3S (TLS sur 995)
+                        if(!app_done && (sp == POP3_PORT_SSL || dp == POP3_PORT_SSL)){
+                            int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
+                            if(tcp_payload_len > 0){
+                                // Tentative identification TLS record
+                                if(header->caplen > (bpf_u_int32)(l4off + tcp->doff*4 + 5)){
+                                    const u_char *tls = packet + l4off + tcp->doff*4;
+                                    if(tls[0] == 0x16 && tls[1] == 0x03){
+                                        strcat(resume, " | POP3S (TLS)");
+                                    } else {
+                                        pop3_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
+                                    }
+                                }
                                 app_done = 1;
                             }
                         }
@@ -299,6 +341,35 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                                 }
                             }
                         }
+                        /* POP3 */
+                        if (src_port == POP3_PORT_PLAIN || dst_port == POP3_PORT_PLAIN){
+                            int pop3_consumed = parse_pop3(packet + offset, header->len - offset, verbosity, indent);
+                            if (pop3_consumed > 0) {
+                                offset += pop3_consumed;
+                                indent += 2;
+                            }
+                        }
+                        /* POP3S (TLS sur 995) */
+                        if (src_port == POP3_PORT_SSL || dst_port == POP3_PORT_SSL){
+                            // Tentative identification TLS record
+                            if(header->len > (bpf_u_int32)(offset + 5)){
+                                const u_char *tls = packet + offset;
+                                if(tls[0] == 0x16 && tls[1] == 0x03){
+                                    for(int i=0;i<indent;i++) printf(" ");
+                                    printf("POP3S (TLS Handshake) – content not parsed\n");
+                                } else {
+                                    // Peut-être du POP3 en clair avant TLS
+                                    int pop3_consumed = parse_pop3(packet + offset, header->len - offset, verbosity, indent);
+                                    if (pop3_consumed > 0) {
+                                        offset += pop3_consumed;
+                                        indent += 2;
+                                    } else {
+                                        for(int i=0;i<indent;i++) printf(" ");
+                                        printf("POP3S (Encrypted or Non-handshake segment)\n");
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 //ICMP (IPv4)
@@ -407,6 +478,35 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                                 } else {
                                     for(int i=0;i<indent;i++) printf(" ");
                                     printf("IMAPS (Encrypted or Non-handshake segment)\n");
+                                }
+                            }
+                        }
+                        /* POP3 */
+                        if (src_port == POP3_PORT_PLAIN || dst_port == POP3_PORT_PLAIN){
+                            int pop3_consumed = parse_pop3(packet + offset, header->len - offset, verbosity, indent);
+                            if (pop3_consumed > 0) {
+                                offset += pop3_consumed;
+                                indent += 2;
+                            }
+                        }
+                        /* POP3S (TLS sur 995) */
+                        if (src_port == POP3_PORT_SSL || dst_port == POP3_PORT_SSL){
+                            // Tentative identification TLS record
+                            if(header->len > (bpf_u_int32)(offset + 5)){
+                                const u_char *tls = packet + offset;
+                                if(tls[0] == 0x16 && tls[1] == 0x03){
+                                    for(int i=0;i<indent;i++) printf(" ");
+                                    printf("POP3S (TLS Handshake) – content not parsed\n");
+                                } else {
+                                    // Peut-être du POP3 en clair avant TLS
+                                    int pop3_consumed = parse_pop3(packet + offset, header->len - offset, verbosity, indent);
+                                    if (pop3_consumed > 0) {
+                                        offset += pop3_consumed;
+                                        indent += 2;
+                                    } else {
+                                        for(int i=0;i<indent;i++) printf(" ");
+                                        printf("POP3S (Encrypted or Non-handshake segment)\n");
+                                    }
                                 }
                             }
                         }
