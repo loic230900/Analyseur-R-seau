@@ -11,13 +11,19 @@ stages:
 # Variables that can be used across jobs
 variables:
   BINARY_NAME: "analyseur"
+  # Use GitLab Dependency Proxy to avoid Docker Hub rate limits
+  # This uses the Dependency Proxy if available, otherwise falls back to direct Docker Hub
+  # Format: <registry>/<group>/dependency_proxy/containers/<image>
+  # If CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX is not set, uses direct ubuntu:22.04
+  UBUNTU_IMAGE: "${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/ubuntu:22.04"
 
 # ========================================
 # STAGE 1: BUILD (Multi-Compiler)
 # ========================================
 build:gcc:
   stage: build
-  image: ubuntu:22.04
+  # Try Dependency Proxy first, then fallback to Debian (often better cached than Ubuntu)
+  image: ${UBUNTU_IMAGE:-debian:bullseye-slim}
   
   # Install dependencies before running script
   before_script:
@@ -47,7 +53,8 @@ build:gcc:
 
 build:clang:
   stage: build
-  image: ubuntu:22.04
+  # Try Dependency Proxy first, then fallback to Debian (often better cached than Ubuntu)
+  image: ${UBUNTU_IMAGE:-debian:bullseye-slim}
   
   before_script:
     - apt-get update -qq
@@ -76,7 +83,8 @@ build:clang:
 # ========================================
 test:pcap-files:
   stage: test
-  image: ubuntu:22.04
+  # Try Dependency Proxy first, then fallback to Debian
+  image: ${UBUNTU_IMAGE:-debian:bullseye-slim}
   
   # This job needs the binary from the build stage
   dependencies:
@@ -121,7 +129,8 @@ test:pcap-files:
 # ========================================
 code-quality:cppcheck:
   stage: quality
-  image: ubuntu:22.04
+  # Try Dependency Proxy first, then fallback to Debian
+  image: ${UBUNTU_IMAGE:-debian:bullseye-slim}
   
   before_script:
     - apt-get update -qq
@@ -149,7 +158,8 @@ code-quality:cppcheck:
 # ========================================
 security:valgrind:
   stage: security
-  image: ubuntu:22.04
+  # Try Dependency Proxy first, then fallback to Debian
+  image: ${UBUNTU_IMAGE:-debian:bullseye-slim}
   
   dependencies:
     - build:gcc
@@ -190,7 +200,8 @@ security:valgrind:
 # ========================================
 release:build:
   stage: deploy
-  image: ubuntu:22.04
+  # Try Dependency Proxy first, then fallback to Debian
+  image: ${UBUNTU_IMAGE:-debian:bullseye-slim}
   
   before_script:
     - apt-get update -qq
