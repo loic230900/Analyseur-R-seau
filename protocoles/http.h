@@ -38,6 +38,10 @@ int http_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
 #define HTTP_METHOD_HEAD    "HEAD"
 #define HTTP_METHOD_OPTIONS "OPTIONS"
 
+/* Ports HTTP */
+#define HTTP_PORT_PLAIN 80   // HTTP non-chiffré
+#define HTTP_PORT_SSL   443   // HTTPS (HTTP over TLS/SSL)
+
 /*codes de status*/
 #define HTTP_STATUS_OK              200
 #define HTTP_STATUS_CREATED         201

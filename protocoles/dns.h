@@ -91,4 +91,7 @@ int dns_v1_summary(const u_char *packet, int caplen, int offset_dns_payload, cha
 #define DNS_MAX_LABEL_LEN    63
 #define DNS_MAX_POINTERS     10
 
+/* Ports DNS */
+#define DNS_PORT 53  // DNS (UDP et TCP)
+
 #endif /* DNS_H */

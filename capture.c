@@ -49,23 +49,24 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             uint16_t sp = ntohs(tcp->source), dp = ntohs(tcp->dest);
                             int app_done = 0;
                             // DNS
-                            if(sp == 53 || dp == 53){
+                            if(sp == DNS_PORT || dp == DNS_PORT){
                                 strcat(resume, " | DNS");
                                 dns_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume, 1);
                                 app_done = 1;
                             }
                             // HTTP
-                            if(!app_done && (sp == 80 || dp == 80)){
+                            if(!app_done && (sp == HTTP_PORT_PLAIN || dp == HTTP_PORT_PLAIN)){
                                 http_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
                                 app_done = 1;
                             }
                             // SMTP
-                            if(!app_done && (sp == 25 || dp == 25 || sp == 587 || dp == 587)){
+                            if(!app_done && ((sp == SMTP_PORT_PLAIN || dp == SMTP_PORT_PLAIN) || 
+                                             (sp == SMTP_PORT_SUBMISSION || dp == SMTP_PORT_SUBMISSION))){
                                 smtp_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
                                 app_done = 1;
                             }
                             // IMAP
-                            if(!app_done && (sp == 143 || dp == 143)){
+                            if(!app_done && (sp == IMAP_PORT_PLAIN || dp == IMAP_PORT_PLAIN)){
                                 int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
                                 if(tcp_payload_len > 0){
                                     imap_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
@@ -73,7 +74,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                                 }
                             }
                             // IMAPS (TLS sur 993)
-                            if(!app_done && (sp == 993 || dp == 993)){
+                            if(!app_done && (sp == IMAP_PORT_SSL || dp == IMAP_PORT_SSL)){
                                 int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
                                 if(tcp_payload_len > 0){
                                     imap_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
@@ -91,13 +92,13 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             int udp_payload_off = l4off + 8;
                             int app_done = 0;
                             // DNS  
-                            if(sp == 53 || dp == 53){
+                            if(sp == DNS_PORT || dp == DNS_PORT){
                                 strcat(resume, " | DNS");
                                 dns_v1_summary(packet, header->caplen, udp_payload_off, resume, 0);
                                 app_done = 1;
                             }
                             // DHCP
-                            if(sp == 67 || sp == 68 || dp == 67 || dp == 68){
+                            if((sp == 67 || sp == 68 || dp == 67 || dp == 68)){
                                 strcat(resume, " | DHCP");
                                 dhcp_v1_summary(packet, header->caplen, udp_payload_off, resume);
                                 app_done = 1;
@@ -130,23 +131,24 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                         uint16_t sp = ntohs(tcp->source), dp = ntohs(tcp->dest);
                         int app_done = 0;
                         // DNS
-                        if(sp == 53 || dp == 53){ 
+                        if(sp == DNS_PORT || dp == DNS_PORT){ 
                             strcat(resume, " | DNS");
                             dns_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume, 1);
                             app_done = 1;
                         }
                         // HTTP
-                        if(!app_done && (sp == 80 || dp == 80)){
+                        if(!app_done && (sp == HTTP_PORT_PLAIN || dp == HTTP_PORT_PLAIN)){
                             http_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
                             app_done = 1;
                         }
                         // SMTP
-                        if(!app_done && (sp == 25 || dp == 25 || sp == 587 || dp == 587)){
+                        if(!app_done && ((sp == SMTP_PORT_PLAIN || dp == SMTP_PORT_PLAIN) || 
+                                         (sp == SMTP_PORT_SUBMISSION || dp == SMTP_PORT_SUBMISSION))){
                             smtp_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
                             app_done = 1;
                         }
                         // IMAP
-                        if(!app_done && (sp == 143 || dp == 143)){
+                        if(!app_done && (sp == IMAP_PORT_PLAIN || dp == IMAP_PORT_PLAIN)){
                             int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
                             if(tcp_payload_len > 0){
                                 imap_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
@@ -154,7 +156,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             }
                         }
                         // IMAPS (TLS sur 993)
-                        if(!app_done && (sp == 993 || dp == 993)){
+                        if(!app_done && (sp == IMAP_PORT_SSL || dp == IMAP_PORT_SSL)){
                             int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
                             if(tcp_payload_len > 0){
                                 imap_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
@@ -172,13 +174,13 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                         int udp_payload_off = l4off + 8; // taille en-tête UDP = 8 octets
                         int app_done = 0; //indicateur application reconnue
                         // DNS
-                        if(sp == 53 || dp == 53){
+                        if(sp == DNS_PORT || dp == DNS_PORT){
                             strcat(resume, " | DNS");
                             dns_v1_summary(packet, header->caplen, udp_payload_off, resume, 0);
                             app_done = 1;
                         }
                         // DHCP
-                        if(sp == 67 || sp == 68 || dp == 67 || dp == 68){
+                        if((sp == 67 || sp == 68 || dp == 67 || dp == 68)){
                             strcat(resume, " | DHCP");
                             dhcp_v1_summary(packet, header->caplen, udp_payload_off, resume);
                             app_done = 1;
@@ -227,7 +229,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                         offset += udp_len;
                         indent += 2;
                         // DNS over UDP
-                        if (src_port == 53 || dst_port == 53) {
+                        if (src_port == DNS_PORT || dst_port == DNS_PORT) {
                             int is_resp; char qname[DNS_MAX_NAME_LEN];
                             int dns_consumed = parse_dns(packet + offset, header->len - offset, verbosity, indent, 0, &is_resp, qname, sizeof(qname));
                             if (dns_consumed > 0) {
@@ -250,7 +252,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                         offset += tcp_len;
                         indent += 2;
                         /* DNS over TCP */
-                        if (src_port == 53 || dst_port == 53) {
+                        if (src_port == DNS_PORT || dst_port == DNS_PORT) {
                             int is_resp; char qname[DNS_MAX_NAME_LEN];
                             int dns_consumed = parse_dns(packet + offset, header->len - offset, verbosity, indent, 1, &is_resp, qname, sizeof(qname));
                             if (dns_consumed > 0) {
@@ -259,7 +261,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             }
                         }
                         /* HTTP */
-                        if (src_port == 80 || dst_port == 80){
+                        if (src_port == HTTP_PORT_PLAIN || dst_port == HTTP_PORT_PLAIN){
                             int http_consumed = parse_http(packet + offset, header->len - offset, verbosity, indent);
                             if (http_consumed > 0) {
                                 offset += http_consumed;
@@ -267,7 +269,8 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             }
                         }
                         /* SMTP */
-                        if (src_port == 25 || dst_port == 25 || src_port == 587 || dst_port == 587){
+                        if ((src_port == SMTP_PORT_PLAIN || dst_port == SMTP_PORT_PLAIN) || 
+                            (src_port == SMTP_PORT_SUBMISSION || dst_port == SMTP_PORT_SUBMISSION)){
                             int smtp_consumed = parse_smtp(packet + offset, header->len - offset, verbosity, indent);
                             if (smtp_consumed > 0) {
                                 offset += smtp_consumed;
@@ -275,7 +278,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             }
                         }
                         /* IMAP */
-                        if (src_port == 143 || dst_port == 143){
+                        if (src_port == IMAP_PORT_PLAIN || dst_port == IMAP_PORT_PLAIN){
                             int imap_consumed = parse_imap(packet + offset, header->len - offset, verbosity, indent);
                             if (imap_consumed > 0) {
                                 offset += imap_consumed;
@@ -283,7 +286,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             }
                         }
                         /* IMAPS (TLS sur 993) */
-                        if (src_port == 993 || dst_port == 993){
+                        if (src_port == IMAP_PORT_SSL || dst_port == IMAP_PORT_SSL){
                             // Tentative identification TLS record
                             if(header->len > (bpf_u_int32)(offset + 5)){
                                 const u_char *tls = packet + offset;
@@ -337,7 +340,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                         offset += udp_len;
                         indent += 2;
                         /* DNS over UDP (IPv6) */
-                        if (src_port == 53 || dst_port == 53) {
+                        if (src_port == DNS_PORT || dst_port == DNS_PORT) {
                             int is_resp; char qname[DNS_MAX_NAME_LEN];
                             int dns_consumed = parse_dns(packet + offset, header->len - offset, verbosity, indent, 0, &is_resp, qname, sizeof(qname));
                             if (dns_consumed > 0) {
@@ -360,7 +363,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                         offset += tcp_len;
                         indent += 2;
                         /* DNS over TCP (IPv6) */
-                        if (src_port == 53 || dst_port == 53) {
+                        if (src_port == DNS_PORT || dst_port == DNS_PORT) {
                             int is_resp; char qname[DNS_MAX_NAME_LEN];
                             int dns_consumed = parse_dns(packet + offset, header->len - offset, verbosity, indent, 1, &is_resp, qname, sizeof(qname));
                             if (dns_consumed > 0) {
@@ -369,7 +372,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             }
                         }
                         /* HTTP */
-                        if (src_port == 80 || dst_port == 80){
+                        if (src_port == HTTP_PORT_PLAIN || dst_port == HTTP_PORT_PLAIN){
                             int http_consumed = parse_http(packet + offset, header->len - offset, verbosity, indent);
                             if (http_consumed > 0) {
                                 offset += http_consumed;
@@ -377,7 +380,8 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             }
                         }
                         /* SMTP */
-                        if (src_port == 25 || dst_port == 25 || src_port == 587 || dst_port == 587){
+                        if ((src_port == SMTP_PORT_PLAIN || dst_port == SMTP_PORT_PLAIN) || 
+                            (src_port == SMTP_PORT_SUBMISSION || dst_port == SMTP_PORT_SUBMISSION)){
                             int smtp_consumed = parse_smtp(packet + offset, header->len - offset, verbosity, indent);
                             if (smtp_consumed > 0) {
                                 offset += smtp_consumed;
@@ -385,7 +389,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             }
                         }
                         /* IMAP */
-                        if (src_port == 143 || dst_port == 143){
+                        if (src_port == IMAP_PORT_PLAIN || dst_port == IMAP_PORT_PLAIN){
                             int imap_consumed = parse_imap(packet + offset, header->len - offset, verbosity, indent);
                             if (imap_consumed > 0) {
                                 offset += imap_consumed;
@@ -393,7 +397,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             }
                         }
                         /* IMAPS (TLS sur 993) */
-                        if (src_port == 993 || dst_port == 993){
+                        if (src_port == IMAP_PORT_SSL || dst_port == IMAP_PORT_SSL){
                             // Tentative identification TLS record
                             if(header->len > (bpf_u_int32)(offset + 5)){
                                 const u_char *tls = packet + offset;

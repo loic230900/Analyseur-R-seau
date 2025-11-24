@@ -18,8 +18,9 @@ static int is_smtp_command(const char *line, int len) {
     if (len < 4) return 0;
     
     const char *commands[] = {
-        "HELO", "EHLO", "MAIL", "RCPT", "DATA", 
-        "QUIT", "RSET", "VRFY", "NOOP", "AUTH", "STARTTLS"
+        SMTP_CMD_HELLO, SMTP_CMD_EHLO, SMTP_CMD_MAIL, SMTP_CMD_RCPT, SMTP_CMD_DATA, 
+        SMTP_CMD_QUIT, SMTP_CMD_RSET, SMTP_CMD_VRFY, SMTP_CMD_NOOP, 
+        SMTP_CMD_AUTH, SMTP_CMD_STARTTLS
     };
     int num_commands = sizeof(commands) / sizeof(commands[0]);
     
@@ -110,7 +111,7 @@ static int parse_smtp_command(const u_char *packet, int length, int verbosity, i
     offset = next;
     
     // Si c'est DATA, tout ce qui suit est le contenu du mail jusqu'à ".\r\n"
-    if (strncasecmp(line, "DATA", 4) == 0 && verbosity == 3) {
+    if (strncasecmp(line, SMTP_CMD_DATA, strlen(SMTP_CMD_DATA)) == 0 && verbosity == 3) {
         // On ne parse pas le contenu ici, juste indiquer qu'il y a du data
         int remaining = length - offset;
         if (remaining > 0) {

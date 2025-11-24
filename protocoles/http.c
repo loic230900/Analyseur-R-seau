@@ -17,7 +17,10 @@ static int is_http_request(const char *line, int len){
     if(len < 8) // minimum "GET / ..."
         return 0;
     
-    const char *methods[] = {"GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"};
+    const char *methods[] = {
+        HTTP_METHOD_GET, HTTP_METHOD_POST, HTTP_METHOD_PUT, 
+        HTTP_METHOD_DELETE, HTTP_METHOD_HEAD, HTTP_METHOD_OPTIONS
+    };
     int num_methods = sizeof(methods) / sizeof(methods[0]);
     for(int i = 0; i < num_methods; i++){
         int method_len = strlen(methods[i]);

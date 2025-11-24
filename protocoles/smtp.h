@@ -30,7 +30,9 @@ int smtp_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
 /* Commandes smtp*/
 #define SMTP_CMD_HELLO      "HELO"
 #define SMTP_CMD_EHLO       "EHLO"
+#define SMTP_CMD_MAIL       "MAIL"
 #define SMTP_CMD_MAIL_FROM  "MAIL FROM"
+#define SMTP_CMD_RCPT       "RCPT"
 #define SMTP_CMD_RCPT_TO    "RCPT TO"
 #define SMTP_CMD_DATA       "DATA"
 #define SMTP_CMD_QUIT       "QUIT"
@@ -40,6 +42,9 @@ int smtp_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
 #define SMTP_CMD_AUTH       "AUTH"
 #define SMTP_CMD_STARTTLS   "STARTTLS"
 
+/* Ports SMTP */
+#define SMTP_PORT_PLAIN 25   // SMTP non-chiffré
+#define SMTP_PORT_SUBMISSION 587  // SMTP soumission (chiffré)
 
 /* code reponse smtp*/
 #define SMTP_CODE_READY             220
