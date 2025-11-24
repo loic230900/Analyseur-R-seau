@@ -17,12 +17,13 @@ variables:
 # ========================================
 build:gcc:
   stage: build
-  image: gcc:11
+  image: ubuntu:22.04
   
   # Install dependencies before running script
   before_script:
     - apt-get update -qq
-    - apt-get install -y -qq libpcap-dev make
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libpcap-dev make gcc
+    - gcc --version
   
   # Build the project with GCC
   script:
@@ -46,11 +47,12 @@ build:gcc:
 
 build:clang:
   stage: build
-  image: silkeh/clang:14
+  image: ubuntu:22.04
   
   before_script:
     - apt-get update -qq
-    - apt-get install -y -qq libpcap-dev make
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libpcap-dev make clang
+    - clang --version
   
   script:
     - echo "Building project with Clang..."
@@ -74,7 +76,7 @@ build:clang:
 # ========================================
 test:pcap-files:
   stage: test
-  image: gcc:11
+  image: ubuntu:22.04
   
   # This job needs the binary from the build stage
   dependencies:
@@ -82,7 +84,7 @@ test:pcap-files:
   
   before_script:
     - apt-get update -qq
-    - apt-get install -y -qq libpcap-dev
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libpcap-dev
   
   script:
     - echo "Running tests with PCAP files..."
@@ -119,11 +121,11 @@ test:pcap-files:
 # ========================================
 code-quality:cppcheck:
   stage: quality
-  image: gcc:11
+  image: ubuntu:22.04
   
   before_script:
     - apt-get update -qq
-    - apt-get install -y -qq cppcheck
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cppcheck
   
   script:
     - echo "Running static analysis..."
@@ -147,14 +149,14 @@ code-quality:cppcheck:
 # ========================================
 security:valgrind:
   stage: security
-  image: gcc:11
+  image: ubuntu:22.04
   
   dependencies:
     - build:gcc
   
   before_script:
     - apt-get update -qq
-    - apt-get install -y -qq libpcap-dev valgrind
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libpcap-dev valgrind
   
   script:
     - echo "Running Valgrind memory leak detection..."
@@ -188,11 +190,11 @@ security:valgrind:
 # ========================================
 release:build:
   stage: deploy
-  image: gcc:11
+  image: ubuntu:22.04
   
   before_script:
     - apt-get update -qq
-    - apt-get install -y -qq libpcap-dev make tar
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq libpcap-dev make tar gcc
   
   script:
     - echo "Building optimized release version..."
