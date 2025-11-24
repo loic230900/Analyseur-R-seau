@@ -40,10 +40,9 @@ build:gcc:
     expire_in: 1 hour
     name: "analyseur-gcc"
   
-  # Only run on main branch and merge requests
-  only:
-    - main
-    - merge_requests
+  # Run on all branches and merge requests
+  rules:
+    - if: $CI_COMMIT_BRANCH
 
 build:clang:
   stage: build
@@ -221,5 +220,5 @@ release:build:
     expire_in: never
   
   # Only run when you create a tag (e.g., v1.0.0)
-  only:
-    - tags
+  rules:
+    - if: $CI_COMMIT_TAG
