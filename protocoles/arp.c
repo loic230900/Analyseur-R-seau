@@ -39,10 +39,26 @@ int parse_arp(const u_char *packet, int length, int verbosity, int indent){
     //verbosite 2 ligne synthethique
     if(verbosity == 2){
         for(int i = 0; i < indent; i++) printf(" ");
-        printf("ARP %s: %s (%s) -> %s (%s)\n", op_str, src_ip, src_mac, dst_ip, dst_mac);
+        if(opcode == ARPOP_REQUEST){
+            printf("ARP who-has %s tell %s\n", dst_ip, src_ip);
+        } else if(opcode == ARPOP_REPLY){
+            printf("ARP %s is-at %s\n", src_ip, src_mac);
+        } else {
+            printf("ARP %s: %s (%s) -> %s (%s)\n", op_str, src_ip, src_mac, dst_ip, dst_mac);
+        }
     }
     //verbosite 3 detaillee
     else if (verbosity == 3) {
+        for(int i = 0; i < indent; i++) printf(" ");
+        printf("ARP: ");
+        if(opcode == ARPOP_REQUEST){
+            printf("who-has %s tell %s\n", dst_ip, src_ip);
+        } else if(opcode == ARPOP_REPLY){
+            printf("%s is-at %s\n", src_ip, src_mac);
+        } else {
+            printf("%s\n", op_str);
+        }
+        
         for(int i = 0; i < indent; i++) printf(" ");
         printf("ARP:\n");
         

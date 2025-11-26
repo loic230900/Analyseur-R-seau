@@ -9,6 +9,7 @@
 #include "udp.h"
 #include "tcp.h"
 #include "arp.h"
+#include "rarp.h"
 #include "dhcp.h"
 #include "icmp.h"
 #include "icmpv6.h"

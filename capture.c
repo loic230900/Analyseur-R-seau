@@ -404,6 +404,10 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
             strcat(resume, "ARP");
             arp_v1_summary(packet, header->caplen, 14, resume); //ajout who-has / is-at 
         } 
+        else if(ethertype == ETHERTYPE_REVARP){ //RARP
+            strcat(resume, "RARP");
+            rarp_v1_summary(packet, header->caplen, 14, resume); //ajout who-is / is-at 
+        }
         else if(ethertype == ETHERTYPE_IP){ //IPv4
             strcat(resume, "IPv4");
             if(header->caplen >= 14 + (int)sizeof(struct iphdr)){
@@ -532,6 +536,10 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
         //Analyse ARP (Layer 2, terminaison)
         if(ethertype == ETHERTYPE_ARP){
             parse_arp(packet + offset, header->len - offset, verbosity, indent);
+        }
+        //Analyse RARP (Layer 2, terminaison)
+        else if(ethertype == ETHERTYPE_REVARP){
+            parse_rarp(packet + offset, header->len - offset, verbosity, indent);
         }
         //Analyse IPv4 ou IPv6
         else if(ethertype == ETHERTYPE_IP){ //IPv4
