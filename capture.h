@@ -6,6 +6,7 @@ typedef unsigned char u_char;
 #define CAPTURE_H
 
 #include <pcap.h>
+#include <stdint.h>
 
 /**
  * Structure pour passer des arguments supplémentaires à la fonction de rappel.
@@ -14,6 +15,10 @@ typedef unsigned char u_char;
 typedef struct {
     int verbosity;
 } capture_args_t;
+
+/* Constantes pour ports DHCP */
+#define DHCP_SERVER_PORT 67
+#define DHCP_CLIENT_PORT 68
 
 /**
  * Fonction de rappel pour traiter chaque paquet capturé.

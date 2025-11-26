@@ -212,6 +212,46 @@ void parse_dhcp(const u_char *packet, int length, int verbosity, int indent){
                                 printf("%*s    Hostname: %s\n", indent, "", name);
                             }
                             break;
+                        case DHCP_OPTION_DOMAIN_NAME:
+                            if (len > 0) {
+                                char domain[256];
+                                memcpy(domain, optptr, len);
+                                domain[len] = '\0';
+                                printf("%*s    Domain Name: %s\n", indent, "", domain);
+                            }
+                            break;
+                        case DHCP_OPTION_BROADCAST:
+                            if (len == 4) {
+                                struct in_addr broadcast;
+                                memcpy(&broadcast.s_addr, optptr, 4);
+                                inet_ntop(AF_INET, &broadcast, addr_str, sizeof(addr_str));
+                                printf("%*s    Broadcast Address: %s\n", indent, "", addr_str);
+                            }
+                            break;
+                        case DHCP_OPTION_MAX_MSG_SIZE:
+                            if (len == 2) {
+                                uint16_t max_size = ntohs(*(const uint16_t *)optptr);
+                                printf("%*s    Maximum DHCP Message Size: %u bytes\n", indent, "", max_size);
+                            }
+                            break;
+                        case DHCP_OPTION_CLIENT_ID:
+                            if (len > 0) {
+                                printf("%*s    Client Identifier: ", indent, "");
+                                // Format: hardware type (1 byte) + identifier
+                                if (len >= 1) {
+                                    uint8_t hw_type = optptr[0];
+                                    printf("Type=%u ", hw_type);
+                                    for(int i = 1; i < len; i++) {
+                                        printf("%02x", optptr[i]);
+                                    }
+                                } else {
+                                    for(int i = 0; i < len; i++) {
+                                        printf("%02x", optptr[i]);
+                                    }
+                                }
+                                printf("\n");
+                            }
+                            break;
                         case DHCP_OPTION_PARAM_LIST:
                             if (len > 0) {
                                 printf("%*s    Param List: ", indent, "");

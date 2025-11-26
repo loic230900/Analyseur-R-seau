@@ -21,12 +21,16 @@ typedef uint32_t IPaddr_t;
 #define DHCP_OPTION_ROUTER          3
 #define DHCP_OPTION_DNS             6
 #define DHCP_OPTION_HOSTNAME        12
+#define DHCP_OPTION_DOMAIN_NAME     15
+#define DHCP_OPTION_BROADCAST       28
 #define DHCP_OPTION_REQUESTED_IP    50
 #define DHCP_OPTION_LEASE_TIME      51
 #define DHCP_OPTION_SERVER_ID       54
 #define DHCP_OPTION_PARAM_LIST      55
+#define DHCP_OPTION_MAX_MSG_SIZE    57
 #define DHCP_OPTION_RENEWAL_TIME    58
 #define DHCP_OPTION_REBINDING_TIME  59
+#define DHCP_OPTION_CLIENT_ID       61
 
 /* Fixed-length portion of BOOTP/DHCP header (op through file) */
 #define DHCP_FIXED_LEN 236

@@ -102,20 +102,97 @@ int parse_tcp(const u_char *packet, int length, int verbosity, int indent, uint1
                 for(int i = 0; i < indent+2; i++) printf(" ");
                 printf("Options: %d bytes\n", options_len);
                 
-                // Afficher les options en hexadécimal si on a la place
-                if(length >= tcp_header_len && options_len <= 40) {
-                    const u_char *options = packet + 20;  // 20 = taille fixe en-tête TCP
+                // Parser les options TCP courantes
+                const u_char *options = packet + 20;  // 20 = taille fixe en-tête TCP
+                int offset = 0;
+                int parsed_any = 0;
+                
+                while(offset < options_len) {
+                    uint8_t opt_kind = options[offset];
+                    
+                    if(opt_kind == 0) { // End of Option List
+                        break;
+                    }
+                    if(opt_kind == 1) { // No-Operation (NOP)
+                        offset++;
+                        continue;
+                    }
+                    
+                    if(offset + 1 >= options_len) break;
+                    uint8_t opt_len = options[offset + 1];
+                    if(opt_len < 2 || offset + opt_len > options_len) break;
+                    
+                    switch(opt_kind) {
+                        case 2: // Maximum Segment Size (MSS)
+                            if(opt_len == 4) {
+                                uint16_t mss = ntohs(*(const uint16_t *)(options + offset + 2));
+                                for(int i = 0; i < indent+2; i++) printf(" ");
+                                printf("  MSS: %u bytes\n", mss);
+                                parsed_any = 1;
+                            }
+                            break;
+                        case 3: // Window Scale
+                            if(opt_len == 3) {
+                                uint8_t scale = options[offset + 2];
+                                for(int i = 0; i < indent+2; i++) printf(" ");
+                                printf("  Window Scale: %u (multiply by 2^%u)\n", scale, scale);
+                                parsed_any = 1;
+                            }
+                            break;
+                        case 4: // SACK Permitted
+                            if(opt_len == 2) {
+                                for(int i = 0; i < indent+2; i++) printf(" ");
+                                printf("  SACK Permitted\n");
+                                parsed_any = 1;
+                            }
+                            break;
+                        case 5: // SACK (Selective Acknowledgment)
+                            if(opt_len >= 2) {
+                                int sack_blocks = (opt_len - 2) / 8;
+                                for(int i = 0; i < indent+2; i++) printf(" ");
+                                printf("  SACK: %d block(s)\n", sack_blocks);
+                                parsed_any = 1;
+                            }
+                            break;
+                        case 8: // Timestamp
+                            if(opt_len == 10) {
+                                uint32_t ts_val = ntohl(*(const uint32_t *)(options + offset + 2));
+                                uint32_t ts_ecr = ntohl(*(const uint32_t *)(options + offset + 6));
+                                for(int i = 0; i < indent+2; i++) printf(" ");
+                                printf("  Timestamp: TSval=%u, TSecr=%u\n", ts_val, ts_ecr);
+                                parsed_any = 1;
+                            }
+                            break;
+                        default:
+                            // Option non gérée: afficher en hexdump seulement si petite
+                            if(opt_len <= 8 && !parsed_any) {
+                                for(int i = 0; i < indent+2; i++) printf(" ");
+                                printf("  Option %u: ", opt_kind);
+                                for(int i = 0; i < opt_len && i < 8; i++) {
+                                    printf("%02x ", options[offset + i]);
+                                }
+                                printf("\n");
+                            }
+                            break;
+                    }
+                    
+                    offset += opt_len;
+                }
+                
+                // Si aucune option n'a été parsée ou s'il reste des données, afficher en hexdump
+                if(!parsed_any || offset < options_len) {
                     for(int i = 0; i < indent+2; i++) printf(" ");
                     printf("  ");
-                    for(int i = 0; i < options_len; i++) {
+                    int start = parsed_any ? offset : 0;
+                    for(int i = start; i < options_len; i++) {
                         printf("%02x ", options[i]);
-                        if((i + 1) % 16 == 0 && i < options_len - 1) {
+                        if((i - start + 1) % 16 == 0 && i < options_len - 1) {
                             printf("\n");
                             for(int j = 0; j < indent+2; j++) printf(" ");
                             printf("  ");
                         }
                     }
-                    printf("\n");
+                    if(start < options_len) printf("\n");
                 }
             }
         }

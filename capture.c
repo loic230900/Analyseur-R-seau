@@ -11,6 +11,382 @@
 #include "hexdump.h"
 #include "protocoles/protocoles.h"
 
+/* Types pour la détection de protocoles */
+typedef enum {
+    APP_PROTO_TCP_NONE = 0,
+    APP_PROTO_TCP_DNS,
+    APP_PROTO_TCP_HTTP,
+    APP_PROTO_TCP_SMTP,
+    APP_PROTO_TCP_IMAP,
+    APP_PROTO_TCP_IMAPS,
+    APP_PROTO_TCP_POP3,
+    APP_PROTO_TCP_POP3S
+} app_proto_tcp_t;
+
+typedef enum {
+    APP_PROTO_UDP_NONE = 0,
+    APP_PROTO_UDP_DNS,
+    APP_PROTO_UDP_DHCP
+} app_proto_udp_t;
+
+/**
+ * Détecte le protocole applicatif TCP basé sur les ports source/destination.
+ * Version pour niveau 1 (vérifie payload_len et TLS).
+ * @param src_port Port source
+ * @param dst_port Port destination
+ * @param tcp_payload_len Longueur du payload TCP (pour vérifications spéciales)
+ * @param tcp_payload_start Pointeur vers le début du payload TCP (pour détection TLS)
+ * @param caplen Longueur capturée totale
+ * @param tcp_payload_offset Offset du payload TCP dans le paquet
+ * @return Type de protocole détecté
+ */
+static app_proto_tcp_t detect_app_tcp_v1(uint16_t src_port, uint16_t dst_port,
+                                          int tcp_payload_len,
+                                          const u_char *tcp_payload_start,
+                                          int caplen, int tcp_payload_offset) {
+    // DNS (priorité 1) - nécessite payload (pas de DNS dans handshake TCP)
+    if(src_port == DNS_PORT || dst_port == DNS_PORT) {
+        if(tcp_payload_len > 0) {
+            return APP_PROTO_TCP_DNS;
+        }
+    }
+    
+    // HTTP (priorité 2) - nécessite payload
+    if(src_port == HTTP_PORT_PLAIN || dst_port == HTTP_PORT_PLAIN) {
+        if(tcp_payload_len > 0) {
+            return APP_PROTO_TCP_HTTP;
+        }
+    }
+    
+    // SMTP (priorité 3) - 2 ports possibles, nécessite payload
+    if((src_port == SMTP_PORT_PLAIN || dst_port == SMTP_PORT_PLAIN) ||
+       (src_port == SMTP_PORT_SUBMISSION || dst_port == SMTP_PORT_SUBMISSION)) {
+        if(tcp_payload_len > 0) {
+            return APP_PROTO_TCP_SMTP;
+        }
+    }
+    
+    // IMAP (priorité 4) - nécessite payload
+    if(src_port == IMAP_PORT_PLAIN || dst_port == IMAP_PORT_PLAIN) {
+        if(tcp_payload_len > 0) {
+            return APP_PROTO_TCP_IMAP;
+        }
+    }
+    
+    // IMAPS (priorité 5) - nécessite payload
+    if(src_port == IMAP_PORT_SSL || dst_port == IMAP_PORT_SSL) {
+        if(tcp_payload_len > 0) {
+            return APP_PROTO_TCP_IMAPS;
+        }
+    }
+    
+    // POP3 (priorité 6) - nécessite payload
+    if(src_port == POP3_PORT_PLAIN || dst_port == POP3_PORT_PLAIN) {
+        if(tcp_payload_len > 0) {
+            return APP_PROTO_TCP_POP3;
+        }
+    }
+    
+    // POP3S (priorité 7) - vérification TLS spéciale
+    if(src_port == POP3_PORT_SSL || dst_port == POP3_PORT_SSL) {
+        if(tcp_payload_len > 0) {
+            // Vérifier si c'est un handshake TLS
+            if((unsigned int)caplen > (unsigned int)(tcp_payload_offset + 5)) {
+                if(tcp_payload_start[0] == 0x16 && tcp_payload_start[1] == 0x03) {
+                    return APP_PROTO_TCP_POP3S; // TLS détecté
+                }
+            }
+            // Sinon, tenter POP3 en clair
+            return APP_PROTO_TCP_POP3;
+        }
+    }
+    
+    return APP_PROTO_TCP_NONE;
+}
+
+/**
+ * Détecte le protocole applicatif TCP basé sur les ports source/destination.
+ * Version simplifiée pour niveaux 2-3 (pas de vérification payload_len).
+ * @param src_port Port source
+ * @param dst_port Port destination
+ * @param tcp_payload_start Pointeur vers le début du payload TCP (pour détection TLS)
+ * @param length Longueur disponible
+ * @return Type de protocole détecté
+ */
+static app_proto_tcp_t detect_app_tcp_v2v3(uint16_t src_port, uint16_t dst_port,
+                                            const u_char *tcp_payload_start,
+                                            int length) {
+    // DNS (priorité 1) - nécessite payload
+    if(src_port == DNS_PORT || dst_port == DNS_PORT) {
+        if(length > 0) {
+            return APP_PROTO_TCP_DNS;
+        }
+    }
+    
+    // HTTP (priorité 2) - nécessite payload
+    if(src_port == HTTP_PORT_PLAIN || dst_port == HTTP_PORT_PLAIN) {
+        if(length > 0) {
+            return APP_PROTO_TCP_HTTP;
+        }
+    }
+    
+    // SMTP (priorité 3) - 2 ports possibles, nécessite payload
+    if((src_port == SMTP_PORT_PLAIN || dst_port == SMTP_PORT_PLAIN) ||
+       (src_port == SMTP_PORT_SUBMISSION || dst_port == SMTP_PORT_SUBMISSION)) {
+        if(length > 0) {
+            return APP_PROTO_TCP_SMTP;
+        }
+    }
+    
+    // IMAP (priorité 4) - nécessite payload
+    if(src_port == IMAP_PORT_PLAIN || dst_port == IMAP_PORT_PLAIN) {
+        if(length > 0) {
+            return APP_PROTO_TCP_IMAP;
+        }
+    }
+    
+    // IMAPS (priorité 5) - nécessite payload
+    if(src_port == IMAP_PORT_SSL || dst_port == IMAP_PORT_SSL) {
+        if(length > 0) {
+            return APP_PROTO_TCP_IMAPS;
+        }
+    }
+    
+    // POP3 (priorité 6) - nécessite payload
+    if(src_port == POP3_PORT_PLAIN || dst_port == POP3_PORT_PLAIN) {
+        if(length > 0) {
+            return APP_PROTO_TCP_POP3;
+        }
+    }
+    
+    // POP3S (priorité 7) - vérification TLS spéciale
+    if(src_port == POP3_PORT_SSL || dst_port == POP3_PORT_SSL) {
+        if(length > 5) {
+            if(tcp_payload_start[0] == 0x16 && tcp_payload_start[1] == 0x03) {
+                return APP_PROTO_TCP_POP3S; // TLS détecté
+            }
+        }
+        // Sinon, tenter POP3 en clair
+        return APP_PROTO_TCP_POP3;
+    }
+    
+    return APP_PROTO_TCP_NONE;
+}
+
+/**
+ * Détecte le protocole applicatif UDP basé sur les ports source/destination.
+ * @param src_port Port source
+ * @param dst_port Port destination
+ * @return Type de protocole détecté
+ */
+static app_proto_udp_t detect_app_udp_v1(uint16_t src_port, uint16_t dst_port) {
+    // DNS (priorité 1)
+    if(src_port == DNS_PORT || dst_port == DNS_PORT) {
+        return APP_PROTO_UDP_DNS;
+    }
+    
+    // DHCP (priorité 2)
+    if(src_port == DHCP_SERVER_PORT || src_port == DHCP_CLIENT_PORT ||
+       dst_port == DHCP_SERVER_PORT || dst_port == DHCP_CLIENT_PORT) {
+        return APP_PROTO_UDP_DHCP;
+    }
+    
+    return APP_PROTO_UDP_NONE;
+}
+
+/**
+ * Traite un protocole TCP détecté pour le niveau 1 (verbosité 1).
+ * @param proto Type de protocole détecté
+ * @param packet Pointeur vers le paquet complet
+ * @param caplen Longueur capturée
+ * @param tcp_payload_offset Offset du payload TCP
+ * @param resume Buffer de sortie pour le résumé
+ * @return 1 si traitement réussi, 0 sinon
+ */
+static int process_app_tcp_v1(app_proto_tcp_t proto,
+                               const u_char *packet, int caplen,
+                               int tcp_payload_offset, char *resume) {
+    switch(proto) {
+        case APP_PROTO_TCP_DNS:
+            strcat(resume, " | DNS");
+            return dns_v1_summary(packet, caplen, tcp_payload_offset, resume, 1);
+            
+        case APP_PROTO_TCP_HTTP:
+            return http_v1_summary(packet, caplen, tcp_payload_offset, resume);
+            
+        case APP_PROTO_TCP_SMTP:
+            return smtp_v1_summary(packet, caplen, tcp_payload_offset, resume);
+            
+        case APP_PROTO_TCP_IMAP:
+            return imap_v1_summary(packet, caplen, tcp_payload_offset, resume);
+            
+        case APP_PROTO_TCP_IMAPS:
+            return imap_v1_summary(packet, caplen, tcp_payload_offset, resume);
+            
+        case APP_PROTO_TCP_POP3:
+            return pop3_v1_summary(packet, caplen, tcp_payload_offset, resume);
+            
+        case APP_PROTO_TCP_POP3S:
+            strcat(resume, " | POP3S (TLS)");
+            return 1;
+            
+        default:
+            return 0;
+    }
+}
+
+/**
+ * Traite un protocole UDP détecté pour le niveau 1 (verbosité 1).
+ * @param proto Type de protocole détecté
+ * @param packet Pointeur vers le paquet complet
+ * @param caplen Longueur capturée
+ * @param udp_payload_offset Offset du payload UDP
+ * @param resume Buffer de sortie pour le résumé
+ * @return 1 si traitement réussi, 0 sinon
+ */
+static int process_app_udp_v1(app_proto_udp_t proto,
+                               const u_char *packet, int caplen,
+                               int udp_payload_offset, char *resume) {
+    switch(proto) {
+        case APP_PROTO_UDP_DNS:
+            strcat(resume, " | DNS");
+            return dns_v1_summary(packet, caplen, udp_payload_offset, resume, 0);
+            
+        case APP_PROTO_UDP_DHCP:
+            strcat(resume, " | DHCP");
+            return dhcp_v1_summary(packet, caplen, udp_payload_offset, resume);
+            
+        default:
+            return 0;
+    }
+}
+
+/**
+ * Traite un protocole TCP détecté pour les niveaux 2-3.
+ * @param proto Type de protocole détecté
+ * @param packet Pointeur vers le payload TCP
+ * @param length Longueur disponible
+ * @param verbosity Niveau de verbosité
+ * @param indent Indentation
+ * @param offset Pointeur vers l'offset (mis à jour)
+ * @return Nombre d'octets consommés
+ */
+static int process_app_tcp_v2v3(app_proto_tcp_t proto,
+                                 const u_char *packet, int length,
+                                 int verbosity, int indent,
+                                 int *offset) {
+    int consumed = 0;
+    
+    switch(proto) {
+        case APP_PROTO_TCP_DNS: {
+            int is_resp;
+            char qname[DNS_MAX_NAME_LEN];
+            consumed = parse_dns(packet, length, verbosity, indent, 1, &is_resp, qname, sizeof(qname));
+            break;
+        }
+        
+        case APP_PROTO_TCP_HTTP:
+            consumed = parse_http(packet, length, verbosity, indent);
+            break;
+            
+        case APP_PROTO_TCP_SMTP:
+            consumed = parse_smtp(packet, length, verbosity, indent);
+            break;
+            
+        case APP_PROTO_TCP_IMAP:
+            consumed = parse_imap(packet, length, verbosity, indent);
+            break;
+            
+        case APP_PROTO_TCP_IMAPS:
+            // Détection TLS pour IMAPS
+            if(length > 5) {
+                if(packet[0] == 0x16 && packet[1] == 0x03) {
+                    for(int i = 0; i < indent; i++) printf(" ");
+                    printf("IMAPS (TLS Handshake) – content not parsed\n");
+                    consumed = 0; // Pas de parsing TLS
+                } else {
+                    for(int i = 0; i < indent; i++) printf(" ");
+                    printf("IMAPS (Encrypted or Non-handshake segment)\n");
+                    consumed = 0;
+                }
+            }
+            break;
+            
+        case APP_PROTO_TCP_POP3:
+            consumed = parse_pop3(packet, length, verbosity, indent);
+            break;
+            
+        case APP_PROTO_TCP_POP3S:
+            // Détection TLS pour POP3S
+            if(length > 5) {
+                if(packet[0] == 0x16 && packet[1] == 0x03) {
+                    for(int i = 0; i < indent; i++) printf(" ");
+                    printf("POP3S (TLS Handshake) – content not parsed\n");
+                    consumed = 0;
+                } else {
+                    // Tenter POP3 en clair avant TLS
+                    consumed = parse_pop3(packet, length, verbosity, indent);
+                    if(consumed == 0) {
+                        for(int i = 0; i < indent; i++) printf(" ");
+                        printf("POP3S (Encrypted or Non-handshake segment)\n");
+                    }
+                }
+            }
+            break;
+            
+        default:
+            consumed = 0;
+            break;
+    }
+    
+    if(consumed > 0 && offset != NULL) {
+        *offset += consumed;
+    }
+    
+    return consumed;
+}
+
+/**
+ * Traite un protocole UDP détecté pour les niveaux 2-3.
+ * @param proto Type de protocole détecté
+ * @param packet Pointeur vers le payload UDP
+ * @param length Longueur disponible
+ * @param verbosity Niveau de verbosité
+ * @param indent Indentation
+ * @param offset Pointeur vers l'offset (mis à jour)
+ * @return Nombre d'octets consommés
+ */
+static int process_app_udp_v2v3(app_proto_udp_t proto,
+                                 const u_char *packet, int length,
+                                 int verbosity, int indent,
+                                 int *offset) {
+    int consumed = 0;
+    
+    switch(proto) {
+        case APP_PROTO_UDP_DNS: {
+            int is_resp;
+            char qname[DNS_MAX_NAME_LEN];
+            consumed = parse_dns(packet, length, verbosity, indent, 0, &is_resp, qname, sizeof(qname));
+            break;
+        }
+        
+        case APP_PROTO_UDP_DHCP:
+            parse_dhcp(packet, length, verbosity, indent);
+            consumed = length;
+            break;
+            
+        default:
+            consumed = 0;
+            break;
+    }
+    
+    if(consumed > 0 && offset != NULL) {
+        *offset += consumed;
+    }
+    
+    return consumed;
+}
+
 void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
     capture_args_t *capture = (capture_args_t *)args;
     int verbosity = capture->verbosity;
@@ -38,7 +414,11 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     int l4off = 14 + ihl;
                     if(ip->protocol == IPPROTO_ICMP){ //ICMP
                         strcat(resume, " | ICMP");
-                        icmp_v1_summary(packet, header->caplen, l4off, resume);
+                        // Extraire l'adresse IP de destination
+                        char dst_ip[INET_ADDRSTRLEN];
+                        struct in_addr dst_addr = { .s_addr = ip->daddr };
+                        inet_ntop(AF_INET, &dst_addr, dst_ip, sizeof(dst_ip));
+                        icmp_v1_summary_with_ip(packet, header->caplen, l4off, resume, dst_ip);
                     } 
                     else if(ip->protocol == IPPROTO_TCP){ //TCP
                         strcat(resume, " | TCP");
@@ -47,60 +427,17 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                         if((int)header->caplen >= l4off + (int)sizeof(struct tcphdr)){
                             const struct tcphdr *tcp = (const struct tcphdr *)(packet + l4off);
                             uint16_t sp = ntohs(tcp->source), dp = ntohs(tcp->dest);
-                            int app_done = 0;
-                            // DNS
-                            if(sp == DNS_PORT || dp == DNS_PORT){
-                                strcat(resume, " | DNS");
-                                dns_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume, 1);
-                                app_done = 1;
-                            }
-                            // HTTP
-                            if(!app_done && (sp == HTTP_PORT_PLAIN || dp == HTTP_PORT_PLAIN)){
-                                http_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
-                                app_done = 1;
-                            }
-                            // SMTP
-                            if(!app_done && ((sp == SMTP_PORT_PLAIN || dp == SMTP_PORT_PLAIN) || 
-                                             (sp == SMTP_PORT_SUBMISSION || dp == SMTP_PORT_SUBMISSION))){
-                                smtp_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
-                                app_done = 1;
-                            }
-                            // IMAP
-                            if(!app_done && (sp == IMAP_PORT_PLAIN || dp == IMAP_PORT_PLAIN)){
-                                int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
-                                if(tcp_payload_len > 0){
-                                    imap_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
-                                    app_done = 1;
-                                }
-                            }
-                            // IMAPS (TLS sur 993)
-                            if(!app_done && (sp == IMAP_PORT_SSL || dp == IMAP_PORT_SSL)){
-                                int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
-                                if(tcp_payload_len > 0){
-                                    imap_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
-                                    app_done = 1;
-                                }
-                            }
-                            // POP3
-                            if(!app_done && (sp == POP3_PORT_PLAIN || dp == POP3_PORT_PLAIN)){
-                                pop3_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
-                                app_done = 1;
-                            }
-                            // POP3S (TLS sur 995)
-                            if(!app_done && (sp == POP3_PORT_SSL || dp == POP3_PORT_SSL)){
-                                int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
-                                if(tcp_payload_len > 0){
-                                    // Tentative identification TLS record
-                                    if(header->caplen > (bpf_u_int32)(l4off + tcp->doff*4 + 5)){
-                                        const u_char *tls = packet + l4off + tcp->doff*4;
-                                        if(tls[0] == 0x16 && tls[1] == 0x03){
-                                            strcat(resume, " | POP3S (TLS)");
-                                        } else {
-                                            pop3_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
-                                        }
-                                    }
-                                    app_done = 1;
-                                }
+                            int tcp_header_len = tcp->doff * 4;
+                            int tcp_payload_offset = l4off + tcp_header_len;
+                            int tcp_payload_len = header->caplen - tcp_payload_offset;
+                            const u_char *tcp_payload_start = packet + tcp_payload_offset;
+                            
+                            app_proto_tcp_t detected = detect_app_tcp_v1(sp, dp, tcp_payload_len,
+                                                                        tcp_payload_start,
+                                                                        header->caplen, tcp_payload_offset);
+                            if(detected != APP_PROTO_TCP_NONE) {
+                                process_app_tcp_v1(detected, packet, header->caplen,
+                                                   tcp_payload_offset, resume);
                             }
                         }
                     } 
@@ -111,20 +448,13 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                             const struct udphdr *udp = (const struct udphdr *)(packet + l4off);
                             uint16_t sp = ntohs(udp->source), dp = ntohs(udp->dest);
                             int udp_payload_off = l4off + 8;
-                            int app_done = 0;
-                            // DNS  
-                            if(sp == DNS_PORT || dp == DNS_PORT){
-                                strcat(resume, " | DNS");
-                                dns_v1_summary(packet, header->caplen, udp_payload_off, resume, 0);
-                                app_done = 1;
-                            }
-                            // DHCP
-                            if((sp == 67 || sp == 68 || dp == 67 || dp == 68)){
-                                strcat(resume, " | DHCP");
-                                dhcp_v1_summary(packet, header->caplen, udp_payload_off, resume);
-                                app_done = 1;
-                            }
-                            if(!app_done){ // ports génériques si pas d'application reconnue
+                            
+                            app_proto_udp_t detected = detect_app_udp_v1(sp, dp);
+                            if(detected != APP_PROTO_UDP_NONE) {
+                                process_app_udp_v1(detected, packet, header->caplen,
+                                                  udp_payload_off, resume);
+                            } else {
+                                // ports génériques si pas d'application reconnue
                                 udp_v1_ports_summary(packet, header->caplen, l4off, resume);
                             }
                         }
@@ -150,60 +480,17 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     if((int)header->caplen >= l4off + (int)sizeof(struct tcphdr)){
                         const struct tcphdr *tcp = (const struct tcphdr *)(packet + l4off);
                         uint16_t sp = ntohs(tcp->source), dp = ntohs(tcp->dest);
-                        int app_done = 0;
-                        // DNS
-                        if(sp == DNS_PORT || dp == DNS_PORT){ 
-                            strcat(resume, " | DNS");
-                            dns_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume, 1);
-                            app_done = 1;
-                        }
-                        // HTTP
-                        if(!app_done && (sp == HTTP_PORT_PLAIN || dp == HTTP_PORT_PLAIN)){
-                            http_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
-                            app_done = 1;
-                        }
-                        // SMTP
-                        if(!app_done && ((sp == SMTP_PORT_PLAIN || dp == SMTP_PORT_PLAIN) || 
-                                         (sp == SMTP_PORT_SUBMISSION || dp == SMTP_PORT_SUBMISSION))){
-                            smtp_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
-                            app_done = 1;
-                        }
-                        // IMAP
-                        if(!app_done && (sp == IMAP_PORT_PLAIN || dp == IMAP_PORT_PLAIN)){
-                            int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
-                            if(tcp_payload_len > 0){
-                                imap_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
-                                app_done = 1;
-                            }
-                        }
-                        // IMAPS (TLS sur 993)
-                        if(!app_done && (sp == IMAP_PORT_SSL || dp == IMAP_PORT_SSL)){
-                            int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
-                            if(tcp_payload_len > 0){
-                                imap_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
-                                app_done = 1;
-                            }
-                        }
-                        // POP3
-                        if(!app_done && (sp == POP3_PORT_PLAIN || dp == POP3_PORT_PLAIN)){
-                            pop3_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
-                            app_done = 1;
-                        }
-                        // POP3S (TLS sur 995)
-                        if(!app_done && (sp == POP3_PORT_SSL || dp == POP3_PORT_SSL)){
-                            int tcp_payload_len = header->caplen - (l4off + tcp->doff*4);
-                            if(tcp_payload_len > 0){
-                                // Tentative identification TLS record
-                                if(header->caplen > (bpf_u_int32)(l4off + tcp->doff*4 + 5)){
-                                    const u_char *tls = packet + l4off + tcp->doff*4;
-                                    if(tls[0] == 0x16 && tls[1] == 0x03){
-                                        strcat(resume, " | POP3S (TLS)");
-                                    } else {
-                                        pop3_v1_summary(packet, header->caplen, l4off + tcp->doff*4, resume);
-                                    }
-                                }
-                                app_done = 1;
-                            }
+                        int tcp_header_len = tcp->doff * 4;
+                        int tcp_payload_offset = l4off + tcp_header_len;
+                        int tcp_payload_len = header->caplen - tcp_payload_offset;
+                        const u_char *tcp_payload_start = packet + tcp_payload_offset;
+                        
+                        app_proto_tcp_t detected = detect_app_tcp_v1(sp, dp, tcp_payload_len,
+                                                                    tcp_payload_start,
+                                                                    header->caplen, tcp_payload_offset);
+                        if(detected != APP_PROTO_TCP_NONE) {
+                            process_app_tcp_v1(detected, packet, header->caplen,
+                                               tcp_payload_offset, resume);
                         }
                     }
                 } 
@@ -214,20 +501,13 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                         const struct udphdr *udp = (const struct udphdr *)(packet + l4off);
                         uint16_t sp = ntohs(udp->source), dp = ntohs(udp->dest);
                         int udp_payload_off = l4off + 8; // taille en-tête UDP = 8 octets
-                        int app_done = 0; //indicateur application reconnue
-                        // DNS
-                        if(sp == DNS_PORT || dp == DNS_PORT){
-                            strcat(resume, " | DNS");
-                            dns_v1_summary(packet, header->caplen, udp_payload_off, resume, 0);
-                            app_done = 1;
-                        }
-                        // DHCP
-                        if((sp == 67 || sp == 68 || dp == 67 || dp == 68)){
-                            strcat(resume, " | DHCP");
-                            dhcp_v1_summary(packet, header->caplen, udp_payload_off, resume);
-                            app_done = 1;
-                        }
-                        if(!app_done){ // ports génériques si pas d'application reconnue
+                        
+                        app_proto_udp_t detected = detect_app_udp_v1(sp, dp);
+                        if(detected != APP_PROTO_UDP_NONE) {
+                            process_app_udp_v1(detected, packet, header->caplen,
+                                              udp_payload_off, resume);
+                        } else {
+                            // ports génériques si pas d'application reconnue
                             udp_v1_ports_summary(packet, header->caplen, l4off, resume);
                         }
                     }
@@ -270,18 +550,15 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     if(udp_len > 0) {
                         offset += udp_len;
                         indent += 2;
-                        // DNS over UDP
-                        if (src_port == DNS_PORT || dst_port == DNS_PORT) {
-                            int is_resp; char qname[DNS_MAX_NAME_LEN];
-                            int dns_consumed = parse_dns(packet + offset, header->len - offset, verbosity, indent, 0, &is_resp, qname, sizeof(qname));
-                            if (dns_consumed > 0) {
-                                offset += dns_consumed;
+                        
+                        app_proto_udp_t detected = detect_app_udp_v1(src_port, dst_port);
+                        if(detected != APP_PROTO_UDP_NONE) {
+                            int consumed = process_app_udp_v2v3(detected, packet + offset,
+                                                                header->len - offset,
+                                                                verbosity, indent, &offset);
+                            if(consumed > 0) {
                                 indent += 2;
                             }
-                        }
-                        //BOOTP/DHCP
-                        if (src_port == 67 || src_port == 68 || dst_port == 67 || dst_port == 68){
-                            parse_dhcp(packet + offset, header->len - offset, verbosity, indent);
                         }
                     }
                 }
@@ -293,81 +570,16 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     if(tcp_len > 0) {
                         offset += tcp_len;
                         indent += 2;
-                        /* DNS over TCP */
-                        if (src_port == DNS_PORT || dst_port == DNS_PORT) {
-                            int is_resp; char qname[DNS_MAX_NAME_LEN];
-                            int dns_consumed = parse_dns(packet + offset, header->len - offset, verbosity, indent, 1, &is_resp, qname, sizeof(qname));
-                            if (dns_consumed > 0) {
-                                offset += dns_consumed;
+                        
+                        app_proto_tcp_t detected = detect_app_tcp_v2v3(src_port, dst_port,
+                                                                      packet + offset,
+                                                                      header->len - offset);
+                        if(detected != APP_PROTO_TCP_NONE) {
+                            int consumed = process_app_tcp_v2v3(detected, packet + offset,
+                                                                header->len - offset,
+                                                                verbosity, indent, &offset);
+                            if(consumed > 0) {
                                 indent += 2;
-                            }
-                        }
-                        /* HTTP */
-                        if (src_port == HTTP_PORT_PLAIN || dst_port == HTTP_PORT_PLAIN){
-                            int http_consumed = parse_http(packet + offset, header->len - offset, verbosity, indent);
-                            if (http_consumed > 0) {
-                                offset += http_consumed;
-                                indent += 2;
-                            }
-                        }
-                        /* SMTP */
-                        if ((src_port == SMTP_PORT_PLAIN || dst_port == SMTP_PORT_PLAIN) || 
-                            (src_port == SMTP_PORT_SUBMISSION || dst_port == SMTP_PORT_SUBMISSION)){
-                            int smtp_consumed = parse_smtp(packet + offset, header->len - offset, verbosity, indent);
-                            if (smtp_consumed > 0) {
-                                offset += smtp_consumed;
-                                indent += 2;
-                            }
-                        }
-                        /* IMAP */
-                        if (src_port == IMAP_PORT_PLAIN || dst_port == IMAP_PORT_PLAIN){
-                            int imap_consumed = parse_imap(packet + offset, header->len - offset, verbosity, indent);
-                            if (imap_consumed > 0) {
-                                offset += imap_consumed;
-                                indent += 2;
-                            }
-                        }
-                        /* IMAPS (TLS sur 993) */
-                        if (src_port == IMAP_PORT_SSL || dst_port == IMAP_PORT_SSL){
-                            // Tentative identification TLS record
-                            if(header->len > (bpf_u_int32)(offset + 5)){
-                                const u_char *tls = packet + offset;
-                                if(tls[0] == 0x16 && tls[1] == 0x03){
-                                    for(int i=0;i<indent;i++) printf(" ");
-                                    printf("IMAPS (TLS Handshake) – content not parsed\n");
-                                } else {
-                                    for(int i=0;i<indent;i++) printf(" ");
-                                    printf("IMAPS (Encrypted or Non-handshake segment)\n");
-                                }
-                            }
-                        }
-                        /* POP3 */
-                        if (src_port == POP3_PORT_PLAIN || dst_port == POP3_PORT_PLAIN){
-                            int pop3_consumed = parse_pop3(packet + offset, header->len - offset, verbosity, indent);
-                            if (pop3_consumed > 0) {
-                                offset += pop3_consumed;
-                                indent += 2;
-                            }
-                        }
-                        /* POP3S (TLS sur 995) */
-                        if (src_port == POP3_PORT_SSL || dst_port == POP3_PORT_SSL){
-                            // Tentative identification TLS record
-                            if(header->len > (bpf_u_int32)(offset + 5)){
-                                const u_char *tls = packet + offset;
-                                if(tls[0] == 0x16 && tls[1] == 0x03){
-                                    for(int i=0;i<indent;i++) printf(" ");
-                                    printf("POP3S (TLS Handshake) – content not parsed\n");
-                                } else {
-                                    // Peut-être du POP3 en clair avant TLS
-                                    int pop3_consumed = parse_pop3(packet + offset, header->len - offset, verbosity, indent);
-                                    if (pop3_consumed > 0) {
-                                        offset += pop3_consumed;
-                                        indent += 2;
-                                    } else {
-                                        for(int i=0;i<indent;i++) printf(" ");
-                                        printf("POP3S (Encrypted or Non-handshake segment)\n");
-                                    }
-                                }
                             }
                         }
                     }
@@ -410,18 +622,15 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     if(udp_len > 0) {
                         offset += udp_len;
                         indent += 2;
-                        /* DNS over UDP (IPv6) */
-                        if (src_port == DNS_PORT || dst_port == DNS_PORT) {
-                            int is_resp; char qname[DNS_MAX_NAME_LEN];
-                            int dns_consumed = parse_dns(packet + offset, header->len - offset, verbosity, indent, 0, &is_resp, qname, sizeof(qname));
-                            if (dns_consumed > 0) {
-                                offset += dns_consumed;
+                        
+                        app_proto_udp_t detected = detect_app_udp_v1(src_port, dst_port);
+                        if(detected != APP_PROTO_UDP_NONE) {
+                            int consumed = process_app_udp_v2v3(detected, packet + offset,
+                                                                header->len - offset,
+                                                                verbosity, indent, &offset);
+                            if(consumed > 0) {
                                 indent += 2;
                             }
-                        }
-                        //BOOTP/DHCP
-                        if (src_port == 67 || src_port == 68 || dst_port == 67 || dst_port == 68){
-                            parse_dhcp(packet + offset, header->len - offset, verbosity, indent);
                         }
                     }
                 }
@@ -433,81 +642,16 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                     if(tcp_len > 0) {
                         offset += tcp_len;
                         indent += 2;
-                        /* DNS over TCP (IPv6) */
-                        if (src_port == DNS_PORT || dst_port == DNS_PORT) {
-                            int is_resp; char qname[DNS_MAX_NAME_LEN];
-                            int dns_consumed = parse_dns(packet + offset, header->len - offset, verbosity, indent, 1, &is_resp, qname, sizeof(qname));
-                            if (dns_consumed > 0) {
-                                offset += dns_consumed;
+                        
+                        app_proto_tcp_t detected = detect_app_tcp_v2v3(src_port, dst_port,
+                                                                      packet + offset,
+                                                                      header->len - offset);
+                        if(detected != APP_PROTO_TCP_NONE) {
+                            int consumed = process_app_tcp_v2v3(detected, packet + offset,
+                                                                header->len - offset,
+                                                                verbosity, indent, &offset);
+                            if(consumed > 0) {
                                 indent += 2;
-                            }
-                        }
-                        /* HTTP */
-                        if (src_port == HTTP_PORT_PLAIN || dst_port == HTTP_PORT_PLAIN){
-                            int http_consumed = parse_http(packet + offset, header->len - offset, verbosity, indent);
-                            if (http_consumed > 0) {
-                                offset += http_consumed;
-                                indent += 2;
-                            }
-                        }
-                        /* SMTP */
-                        if ((src_port == SMTP_PORT_PLAIN || dst_port == SMTP_PORT_PLAIN) || 
-                            (src_port == SMTP_PORT_SUBMISSION || dst_port == SMTP_PORT_SUBMISSION)){
-                            int smtp_consumed = parse_smtp(packet + offset, header->len - offset, verbosity, indent);
-                            if (smtp_consumed > 0) {
-                                offset += smtp_consumed;
-                                indent += 2;
-                            }
-                        }
-                        /* IMAP */
-                        if (src_port == IMAP_PORT_PLAIN || dst_port == IMAP_PORT_PLAIN){
-                            int imap_consumed = parse_imap(packet + offset, header->len - offset, verbosity, indent);
-                            if (imap_consumed > 0) {
-                                offset += imap_consumed;
-                                indent += 2;
-                            }
-                        }
-                        /* IMAPS (TLS sur 993) */
-                        if (src_port == IMAP_PORT_SSL || dst_port == IMAP_PORT_SSL){
-                            // Tentative identification TLS record
-                            if(header->len > (bpf_u_int32)(offset + 5)){
-                                const u_char *tls = packet + offset;
-                                if(tls[0] == 0x16 && tls[1] == 0x03){
-                                    for(int i=0;i<indent;i++) printf(" ");
-                                    printf("IMAPS (TLS Handshake) – content not parsed\n");
-                                } else {
-                                    for(int i=0;i<indent;i++) printf(" ");
-                                    printf("IMAPS (Encrypted or Non-handshake segment)\n");
-                                }
-                            }
-                        }
-                        /* POP3 */
-                        if (src_port == POP3_PORT_PLAIN || dst_port == POP3_PORT_PLAIN){
-                            int pop3_consumed = parse_pop3(packet + offset, header->len - offset, verbosity, indent);
-                            if (pop3_consumed > 0) {
-                                offset += pop3_consumed;
-                                indent += 2;
-                            }
-                        }
-                        /* POP3S (TLS sur 995) */
-                        if (src_port == POP3_PORT_SSL || dst_port == POP3_PORT_SSL){
-                            // Tentative identification TLS record
-                            if(header->len > (bpf_u_int32)(offset + 5)){
-                                const u_char *tls = packet + offset;
-                                if(tls[0] == 0x16 && tls[1] == 0x03){
-                                    for(int i=0;i<indent;i++) printf(" ");
-                                    printf("POP3S (TLS Handshake) – content not parsed\n");
-                                } else {
-                                    // Peut-être du POP3 en clair avant TLS
-                                    int pop3_consumed = parse_pop3(packet + offset, header->len - offset, verbosity, indent);
-                                    if (pop3_consumed > 0) {
-                                        offset += pop3_consumed;
-                                        indent += 2;
-                                    } else {
-                                        for(int i=0;i<indent;i++) printf(" ");
-                                        printf("POP3S (Encrypted or Non-handshake segment)\n");
-                                    }
-                                }
                             }
                         }
                     }

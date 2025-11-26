@@ -43,6 +43,90 @@ static int is_http_response(const char *line, int len){
     return (strncmp(line, "HTTP/1.", 7) == 0);
 }
 
+/**
+ * Trouve une fin naturelle d'un message textuel (JSON, XML, etc.) pour éviter de couper
+ * @param data: pointeur vers les données
+ * @param total_len: longueur totale disponible
+ * @param max_display: limite maximale souhaitée
+ * @return longueur à afficher (peut être > max_display si message complet est proche)
+ */
+static int find_natural_end(const u_char *data, int total_len, int max_display) {
+    // Si le message est complet et < limite, l'afficher en entier
+    if(total_len <= max_display) {
+        return total_len;
+    }
+    
+    // Chercher une fin naturelle proche de la limite
+    int search_start = max_display - 200; // Chercher dans les 200 derniers bytes avant la limite
+    if(search_start < 0) search_start = 0;
+    int search_end = (total_len < max_display + 500) ? total_len : max_display + 500;
+    
+    // Détecter le type de contenu
+    int is_json = (data[0] == '{' || data[0] == '[');
+    int is_xml = (data[0] == '<');
+    
+    if(is_json) {
+        // Pour JSON: compter les accolades/crochets pour trouver la fin complète
+        char open_char = (data[0] == '{') ? '{' : '[';
+        char close_char = (data[0] == '{') ? '}' : ']';
+        int depth = 0;
+        int in_string = 0; // Pour ignorer les caractères dans les strings JSON
+        
+        for(int i = 0; i < search_end && i < total_len; i++) {
+            // Gérer les strings JSON (ignorer les caractères à l'intérieur)
+            if(data[i] == '"' && (i == 0 || data[i-1] != '\\')) {
+                in_string = !in_string;
+                continue;
+            }
+            
+            if(!in_string) {
+                if(data[i] == open_char) {
+                    depth++;
+                } else if(data[i] == close_char) {
+                    depth--;
+                    // Si depth == 0, on a trouvé la fin complète du JSON
+                    if(depth == 0) {
+                        // Si c'est proche de max_display (dans les 500 bytes), afficher tout
+                        if(i < max_display + 500) {
+                            return i + 1; // Inclure le caractère de fermeture
+                        }
+                    }
+                }
+            }
+            
+            // Si on dépasse max_display et qu'on n'a pas trouvé de fin, chercher dans les 500 bytes suivants
+            if(i >= max_display && depth > 0) {
+                // Continuer à chercher jusqu'à search_end
+                continue;
+            }
+        }
+        
+        // Si on a trouvé une fin complète mais après max_display + 500, tronquer à max_display
+        if(depth > 0) {
+            // Pas de fin complète trouvée dans la fenêtre de recherche
+            return max_display;
+        }
+    } else if(is_xml) {
+        // Pour XML: chercher la balise de fermeture
+        for(int i = max_display; i < search_end && i < total_len; i++) {
+            if(data[i] == '>' && i > 0 && data[i-1] == '/') {
+                // Balise auto-fermante ou fin de balise
+                return i + 1;
+            }
+        }
+    } else {
+        // Pour texte simple: chercher la fin d'une ligne complète
+        for(int i = max_display; i < search_end && i < total_len; i++) {
+            if(data[i] == '\n' || (data[i] == '\r' && i+1 < total_len && data[i+1] == '\n')) {
+                return i + ((data[i] == '\r') ? 2 : 1);
+            }
+        }
+    }
+    
+    // Si pas de fin naturelle trouvée, utiliser la limite
+    return max_display;
+}
+
 /* Helpers de parsing de lignes déplacés dans textutils.c */
 
 /**
@@ -65,10 +149,56 @@ static int parse_http_request(const u_char *packet, int length, int verbosity, i
     char method[16] = "", uri[256] = "", version[16] = "";
     sscanf(line, "%15s %255s %15s", method, uri, version);
 
+    offset = next;
+
+    //parsing des headers pour extraire Host (nécessaire pour v2 et v3)
+    char host_header[256] = "";
+    int header_offset = offset;
+    int header_next;
+    
+    while(header_offset < length){
+        header_next = text_extract_line(packet, header_offset, length, line, sizeof(line));
+        if(header_next < 0)
+            break;
+        
+        //ligne vide = fin des headers
+        if(strlen(line) == 0){
+            break;
+        }
+
+        char *colon = strchr(line, ':');
+        if(colon){
+            *colon = '\0'; 
+            char *value = colon + 1;
+            while(*value == ' ')
+                value ++;
+            
+            // Extraire Host header
+            if(strcasecmp(line, "Host") == 0) {
+                // Enlever \r\n à la fin
+                int host_len = strlen(value);
+                while(host_len > 0 && (value[host_len-1] == '\r' || value[host_len-1] == '\n')) {
+                    value[host_len-1] = '\0';
+                    host_len--;
+                }
+                if(host_len > 0 && host_len < 255) {
+                    strncpy(host_header, value, host_len);
+                    host_header[host_len] = '\0';
+                }
+            }
+        }
+
+        header_offset = header_next;
+    }
+
     //verbosite 2
     if(verbosity == 2){
         for(int i = 0; i < indent; i++) printf(" ");
-        printf("HTTP Request: %s %s %s\n", method, uri, version);
+        if(strlen(host_header) > 0) {
+            printf("HTTP Request: %s %s %s [Host: %s]\n", method, uri, version, host_header);
+        } else {
+            printf("HTTP Request: %s %s %s\n", method, uri, version);
+        }
     }
     else if (verbosity == 3){ // verbosite 3
         for(int  i=0; i < indent; i++ ) printf(" ");
@@ -83,22 +213,23 @@ static int parse_http_request(const u_char *packet, int length, int verbosity, i
         for(int i = 0; i < indent + 2; i++) printf(" ");
         printf("Version: %s\n", version);
     }
-    offset = next;
 
-    //parsing des headers
+    //parsing des headers (réafficher pour verbosité 3)
     if(verbosity == 3){
         for(int i = 0; i < indent; i++) printf(" ");
         printf("Headers:\n");
     }
 
-    while(offset < length){
-        next = text_extract_line(packet, offset, length, line, sizeof(line));
-        if(next < 0)
+    // Réparcourir les headers pour l'affichage détaillé en v3
+    header_offset = offset;
+    while(header_offset < length){
+        header_next = text_extract_line(packet, header_offset, length, line, sizeof(line));
+        if(header_next < 0)
             break;
         
         //ligne vide
         if(strlen(line) == 0){
-            offset = next;
+            offset = header_offset;
             break;
         }
 
@@ -115,8 +246,11 @@ static int parse_http_request(const u_char *packet, int length, int verbosity, i
             }
         }
 
-        offset = next;
+        header_offset = header_next;
     }
+    
+    // Mettre à jour offset pour le body
+    offset = header_offset;
 
     //body
     int body_len = length - offset;
@@ -135,19 +269,29 @@ static int parse_http_request(const u_char *packet, int length, int verbosity, i
             }
         }
         
+        // Limiter l'affichage intelligemment (ne pas couper un message complet)
+        int display_len = find_natural_end(packet + offset, body_len, 2000);
+        
         if(is_text){
             // Afficher le texte directement
             for(int i = 0; i < indent; i++) printf(" ");
             printf("Content (text):\n");
             for(int i = 0; i < indent; i++) printf(" ");
             printf("---\n");
-            fwrite(packet + offset, 1, body_len, stdout);
+            fwrite(packet + offset, 1, display_len, stdout);
+            if(body_len > display_len) {
+                printf("\n... (truncated, %d bytes total, showing first %d bytes)", body_len, display_len);
+            }
             printf("\n");
             for(int i = 0; i < indent; i++) printf(" ");
             printf("---\n");
         } else {
-            // Afficher en hexdump pour données binaires
-            print_hexdump(packet + offset, body_len);
+            // Afficher en hexdump pour données binaires (limité aussi)
+            print_hexdump(packet + offset, display_len);
+            if(body_len > display_len) {
+                for(int i = 0; i < indent; i++) printf(" ");
+                printf("... (truncated, %d bytes total, showing first %d bytes)\n", body_len, display_len);
+            }
         }
     }
     return offset + body_len;
@@ -265,19 +409,29 @@ static int parse_http_response(const u_char *packet, int length, int verbosity, 
                     }
                 }
                 
+                // Limiter l'affichage intelligemment (ne pas couper un message complet)
+                int display_len = find_natural_end(packet + offset, actual_body_len, 2000);
+                
                 if(is_text){
                     // Afficher le texte directement
                     for(int i = 0; i < indent; i++) printf(" ");
                     printf("Content (text):\n");
                     for(int i = 0; i < indent; i++) printf(" ");
                     printf("---\n");
-                    fwrite(packet + offset, 1, actual_body_len, stdout);
+                    fwrite(packet + offset, 1, display_len, stdout);
+                    if(actual_body_len > display_len) {
+                        printf("\n... (truncated, %d bytes total, showing first %d bytes)", actual_body_len, display_len);
+                    }
                     printf("\n");
                     for(int i = 0; i < indent; i++) printf(" ");
                     printf("---\n");
                 } else {
-                    // Afficher en hexdump pour données binaires
-                    print_hexdump(packet + offset, actual_body_len);
+                    // Afficher en hexdump pour données binaires (limité aussi)
+                    print_hexdump(packet + offset, display_len);
+                    if(actual_body_len > display_len) {
+                        for(int i = 0; i < indent; i++) printf(" ");
+                        printf("... (truncated, %d bytes total, showing first %d bytes)\n", actual_body_len, display_len);
+                    }
                 }
             }
         }
@@ -304,16 +458,52 @@ int parse_http(const u_char *packet, int length, int verbosity, int indent) {
         return parse_http_response(packet, length, verbosity, indent);
     }
     
-    // Ni requête ni réponse → afficher comme data en v2/v3
+    // Ni requête ni réponse → probablement du body fragmenté
+    // Détecter si c'est du JSON/text pour l'afficher intelligemment
     if(verbosity == 2 && length > 0) {
         for(int i = 0; i < indent; i++) printf(" ");
-        printf("HTTP Data: %d bytes\n", length);
+        printf("HTTP Body (fragmented): %d bytes\n", length);
         return length;
     }
     else if(verbosity == 3 && length > 0) {
         for(int i = 0; i < indent; i++) printf(" ");
-        printf("HTTP Data: %d bytes\n", length);
-        print_hexdump(packet, length);
+        printf("HTTP Body (fragmented): %d bytes\n", length);
+        
+        // Vérifier si c'est du texte/JSON (commence souvent par { ou [)
+        int is_text = 1;
+        int check_len = (length > 512) ? 512 : length;
+        for(int i = 0; i < check_len; i++) {
+            unsigned char c = packet[i];
+            if(!isprint(c) && c != '\r' && c != '\n' && c != '\t' && c != ' ') {
+                is_text = 0;
+                break;
+            }
+        }
+        
+        // Limiter l'affichage intelligemment (ne pas couper un message complet)
+        int display_len = find_natural_end(packet, length, 2000);
+        
+        if(is_text && (packet[0] == '{' || packet[0] == '[' || packet[0] == '<')) {
+            // Probablement JSON/XML/text
+            for(int i = 0; i < indent; i++) printf(" ");
+            printf("Content (text):\n");
+            for(int i = 0; i < indent; i++) printf(" ");
+            printf("---\n");
+            fwrite(packet, 1, display_len, stdout);
+            if(length > display_len) {
+                printf("\n... (truncated, %d bytes total, showing first %d bytes)", length, display_len);
+            }
+            printf("\n");
+            for(int i = 0; i < indent; i++) printf(" ");
+            printf("---\n");
+        } else {
+            // Afficher en hexdump
+            print_hexdump(packet, display_len);
+            if(length > display_len) {
+                for(int i = 0; i < indent; i++) printf(" ");
+                printf("... (truncated, %d bytes total, showing first %d bytes)\n", length, display_len);
+            }
+        }
         return length;
     }
     
@@ -351,11 +541,63 @@ int http_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
         char method[16] = "", uri[64] = "";
         sscanf(line, "%15s %63s", method, uri);
     
-        if(strlen(resume) + strlen(method) + strlen(uri) + 10 < 255) {
-            strcat(resume, " | HTTP ");
-            strcat(resume, method);
-            strcat(resume, " ");
-            strcat(resume, uri);
+        // Chercher le header Host:
+        char host[128] = "";
+        int offset = end;
+        while(offset < http_len) {
+            int next_end = text_find_line_end(http, offset + 2, http_len);
+            if(next_end < 0) break;
+            
+            int line_len = next_end - (offset + 2);
+            if(line_len <= 0) break; // fin des headers
+            if(line_len > 127) line_len = 127;
+            
+            char header[128];
+            memcpy(header, http + offset + 2, line_len);
+            header[line_len] = '\0';
+            
+            // Host header
+            if(strncasecmp(header, "Host:", 5) == 0) {
+                char *value = header + 5;
+                while(*value == ' ') value++;
+                // Enlever \r\n à la fin
+                int host_len = strlen(value);
+                while(host_len > 0 && (value[host_len-1] == '\r' || value[host_len-1] == '\n')) {
+                    value[host_len-1] = '\0';
+                    host_len--;
+                }
+                if(host_len > 0 && host_len < 127) {
+                    strncpy(host, value, host_len);
+                    host[host_len] = '\0';
+                }
+                break; // Host trouvé, on peut arrêter
+            }
+            offset = next_end;
+        }
+        
+        // Construire le résumé avec Host si disponible
+        if(strlen(host) > 0) {
+            char http_str[256];
+            snprintf(http_str, sizeof(http_str), " | HTTP %s %s [Host: %s]", method, uri, host);
+            if(strlen(resume) + strlen(http_str) < 255) {
+                strcat(resume, http_str);
+            } else {
+                // Fallback sans Host si trop long
+                if(strlen(resume) + strlen(method) + strlen(uri) + 10 < 255) {
+                    strcat(resume, " | HTTP ");
+                    strcat(resume, method);
+                    strcat(resume, " ");
+                    strcat(resume, uri);
+                }
+            }
+        } else {
+            // Pas de Host header trouvé
+            if(strlen(resume) + strlen(method) + strlen(uri) + 10 < 255) {
+                strcat(resume, " | HTTP ");
+                strcat(resume, method);
+                strcat(resume, " ");
+                strcat(resume, uri);
+            }
         }
         return 1;
     }

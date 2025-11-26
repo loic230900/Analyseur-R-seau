@@ -81,8 +81,96 @@ int parse_ipv4(const u_char *packet, int length, int verbosity, int indent, uint
         else if(strncmp(dst_ip, "10.", 3) == 0 || strncmp(dst_ip, "192.168.", 8) == 0 || strncmp(dst_ip, "172.16.", 7) == 0) printf(" [PRIVATE]");
         printf("\n");
         if (ihl > 20) {
+            int options_len = ihl - 20;
             for (int i = 0; i < indent + 2; i++) printf(" ");
-            printf("Options: %d bytes\n", ihl - 20);
+            printf("Options: %d bytes\n", options_len);
+            
+            // Parser les options IPv4 courantes
+            if(length >= ihl && options_len > 0) {
+                const u_char *options = packet + 20;  // 20 = taille fixe en-tête IPv4
+                int offset = 0;
+                int parsed_any = 0;
+                
+                while(offset < options_len) {
+                    uint8_t opt_type = options[offset];
+                    
+                    if(opt_type == 0) { // End of Option List
+                        break;
+                    }
+                    if(opt_type == 1) { // No-Operation (NOP)
+                        offset++;
+                        continue;
+                    }
+                    
+                    if(offset + 1 >= options_len) break;
+                    uint8_t opt_len = options[offset + 1];
+                    if(opt_len < 2 || offset + opt_len > options_len) break;
+                    
+                    switch(opt_type) {
+                        case 7: // Record Route
+                            if(opt_len >= 3) {
+                                uint8_t ptr = options[offset + 2];
+                                for(int i = 0; i < indent + 2; i++) printf(" ");
+                                printf("  Record Route: pointer=%u\n", ptr);
+                                parsed_any = 1;
+                            }
+                            break;
+                        case 9: // Strict Source Route
+                            if(opt_len >= 3) {
+                                uint8_t ptr = options[offset + 2];
+                                for(int i = 0; i < indent + 2; i++) printf(" ");
+                                printf("  Strict Source Route: pointer=%u\n", ptr);
+                                parsed_any = 1;
+                            }
+                            break;
+                        case 10: // Loose Source Route
+                            if(opt_len >= 3) {
+                                uint8_t ptr = options[offset + 2];
+                                for(int i = 0; i < indent + 2; i++) printf(" ");
+                                printf("  Loose Source Route: pointer=%u\n", ptr);
+                                parsed_any = 1;
+                            }
+                            break;
+                        case 20: // Router Alert
+                            if(opt_len == 4) {
+                                uint16_t alert = ntohs(*(const uint16_t *)(options + offset + 2));
+                                for(int i = 0; i < indent + 2; i++) printf(" ");
+                                printf("  Router Alert: 0x%04x\n", alert);
+                                parsed_any = 1;
+                            }
+                            break;
+                        default:
+                            // Option non gérée: afficher en hexdump seulement si petite
+                            if(opt_len <= 8 && !parsed_any) {
+                                for(int i = 0; i < indent + 2; i++) printf(" ");
+                                printf("  Option %u: ", opt_type);
+                                for(int i = 0; i < opt_len && i < 8; i++) {
+                                    printf("%02x ", options[offset + i]);
+                                }
+                                printf("\n");
+                            }
+                            break;
+                    }
+                    
+                    offset += opt_len;
+                }
+                
+                // Si aucune option n'a été parsée ou s'il reste des données, afficher en hexdump
+                if(!parsed_any || offset < options_len) {
+                    for(int i = 0; i < indent + 2; i++) printf(" ");
+                    printf("  ");
+                    int start = parsed_any ? offset : 0;
+                    for(int i = start; i < options_len; i++) {
+                        printf("%02x ", options[i]);
+                        if((i - start + 1) % 16 == 0 && i < options_len - 1) {
+                            printf("\n");
+                            for(int j = 0; j < indent + 2; j++) printf(" ");
+                            printf("  ");
+                        }
+                    }
+                    if(start < options_len) printf("\n");
+                }
+            }
         }
     }
     return ihl;

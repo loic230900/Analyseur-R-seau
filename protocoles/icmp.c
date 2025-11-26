@@ -94,3 +94,32 @@ int icmp_v1_summary(const u_char *packet, int caplen, int offset_ip_start, char 
     }
     return 1;
 }
+
+int icmp_v1_summary_with_ip(const u_char *packet, int caplen, int offset_icmp_start, char *resume, const char *dst_ip){
+    if(caplen < offset_icmp_start + 8) return 0;
+    const struct icmphdr *icmp = (const struct icmphdr *)(packet + offset_icmp_start);
+    char type_str[64] = "";
+    switch(icmp->type){
+        case ICMP_ECHO: strcpy(type_str, "EchoReq"); break;
+        case ICMP_ECHOREPLY: strcpy(type_str, "EchoRep"); break;
+        case ICMP_DEST_UNREACH: strcpy(type_str, "Unreach"); break;
+        case ICMP_TIME_EXCEEDED: strcpy(type_str, "TimeEx"); break;
+        case ICMP_REDIRECT: strcpy(type_str, "Redirect"); break;
+        default: {
+            snprintf(type_str, sizeof(type_str), "T%u", icmp->type);
+        }
+    }
+    
+    // Ajouter type et adresse IP
+    char icmp_info[128];
+    if(dst_ip && strlen(dst_ip) > 0) {
+        snprintf(icmp_info, sizeof(icmp_info), " %s -> %s", type_str, dst_ip);
+    } else {
+        snprintf(icmp_info, sizeof(icmp_info), " %s", type_str);
+    }
+    
+    if(strlen(resume) + strlen(icmp_info) < 255) {
+        strcat(resume, icmp_info);
+    }
+    return 1;
+}
