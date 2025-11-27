@@ -20,7 +20,8 @@ typedef enum {
     APP_PROTO_TCP_IMAP,
     APP_PROTO_TCP_IMAPS,
     APP_PROTO_TCP_POP3,
-    APP_PROTO_TCP_POP3S
+    APP_PROTO_TCP_POP3S,
+    APP_PROTO_TCP_FTP
 } app_proto_tcp_t;
 
 typedef enum {
@@ -101,6 +102,13 @@ static app_proto_tcp_t detect_app_tcp_v1(uint16_t src_port, uint16_t dst_port,
         }
     }
     
+    // FTP (priorité 8) - port 21, nécessite payload
+    if(src_port == FTP_PORT_CONTROL || dst_port == FTP_PORT_CONTROL) {
+        if(tcp_payload_len > 0) {
+            return APP_PROTO_TCP_FTP;
+        }
+    }
+    
     return APP_PROTO_TCP_NONE;
 }
 
@@ -170,6 +178,13 @@ static app_proto_tcp_t detect_app_tcp_v2v3(uint16_t src_port, uint16_t dst_port,
         return APP_PROTO_TCP_POP3;
     }
     
+    // FTP 
+    if(src_port == FTP_PORT_CONTROL || dst_port == FTP_PORT_CONTROL) {
+        if(length > 0) {
+            return APP_PROTO_TCP_FTP;
+        }
+    }
+    
     return APP_PROTO_TCP_NONE;
 }
 
@@ -229,6 +244,9 @@ static int process_app_tcp_v1(app_proto_tcp_t proto,
         case APP_PROTO_TCP_POP3S:
             strcat(resume, " | POP3S (TLS)");
             return 1;
+            
+        case APP_PROTO_TCP_FTP:
+            return ftp_v1_summary(packet, caplen, tcp_payload_offset, resume);
             
         default:
             return 0;
@@ -332,6 +350,10 @@ static int process_app_tcp_v2v3(app_proto_tcp_t proto,
                     }
                 }
             }
+            break;
+            
+        case APP_PROTO_TCP_FTP:
+            consumed = parse_ftp(packet, length, verbosity, indent);
             break;
             
         default:

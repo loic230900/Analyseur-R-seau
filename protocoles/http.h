@@ -30,31 +30,9 @@ int parse_http(const u_char *packet, int length, int verbosity, int indent);
  */
 int http_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, char *resume);
 
-/*Methodes HTTP*/
-#define HTTP_METHOD_GET     "GET"
-#define HTTP_METHOD_POST    "POST"
-#define HTTP_METHOD_PUT     "PUT"
-#define HTTP_METHOD_DELETE  "DELETE"
-#define HTTP_METHOD_HEAD    "HEAD"
-#define HTTP_METHOD_OPTIONS "OPTIONS"
-
 /* Ports HTTP */
 #define HTTP_PORT_PLAIN 80   // HTTP non-chiffré
 #define HTTP_PORT_SSL   443   // HTTPS (HTTP over TLS/SSL)
-
-/*codes de status*/
-#define HTTP_STATUS_OK              200
-#define HTTP_STATUS_CREATED         201
-#define HTTP_STATUS_MOVED           301
-#define HTTP_STATUS_FOUND           302
-#define HTTP_STATUS_NOT_MODIFIED    304
-#define HTTP_STATUS_BAD_REQUEST     400
-#define HTTP_STATUS_UNAUTHORIZED    401
-#define HTTP_STATUS_FORBIDDEN       403
-#define HTTP_STATUS_NOT_FOUND       404
-#define HTTP_STATUS_SERVER_ERROR    500
-#define HTTP_STATUS_NOT_IMPLEMENTED 501
-#define HTTP_STATUS_BAD_GATEWAY     502
 
 
 #endif /* HTTP_H */

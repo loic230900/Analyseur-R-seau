@@ -20,6 +20,7 @@
 #include "smtp.h"
 #include "imap.h"
 #include "pop3.h"
+#include "ftp.h"
 #include "../util/textutils.h"
 
 

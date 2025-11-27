@@ -9,6 +9,7 @@
 
 /**
 * Verifie si une ligne commence par une methode http
+* Format : caractères alphabétiques en majuscules, suivis d'un espace et d'une URI
 * @param line: pointeur vers le debut de la ligne
 * @param len: longueur de la ligne
 * @return 1 si c'est une requete http, 0 sinon
@@ -17,17 +18,44 @@ static int is_http_request(const char *line, int len){
     if(len < 8) // minimum "GET / ..."
         return 0;
     
-    const char *methods[] = {
-        HTTP_METHOD_GET, HTTP_METHOD_POST, HTTP_METHOD_PUT, 
-        HTTP_METHOD_DELETE, HTTP_METHOD_HEAD, HTTP_METHOD_OPTIONS
-    };
-    int num_methods = sizeof(methods) / sizeof(methods[0]);
-    for(int i = 0; i < num_methods; i++){
-        int method_len = strlen(methods[i]);
-        if(len >= method_len && strncmp(line, methods[i], method_len) == 0){
+    // Vérifier que le premier caractère est alphabétique et en majuscule
+    if (!isupper((unsigned char)line[0]))
+        return 0;
+    
+    // Compter les caractères alphabétiques consécutifs (méthodes HTTP)
+    int method_len = 0;
+    while (method_len < len && method_len < 20 && isalpha((unsigned char)line[method_len])) {
+        method_len++;
+    }
+    
+    // Une méthode doit avoir au moins 3 caractères (GET, PUT, etc.)
+    if (method_len < 3 || method_len > 20)
+        return 0;
+    
+    // Vérifier que tous les caractères sont en majuscules
+    for (int i = 0; i < method_len; i++) {
+        if (!isupper((unsigned char)line[i])) {
+            return 0;
+        }
+    }
+    
+    // Après la méthode, il doit y avoir un espace suivi d'une URI (commence par /)
+    if (method_len < len) {
+        if (line[method_len] != ' ')
+            return 0;
+        
+        // Chercher le début de l'URI (après l'espace)
+        int uri_start = method_len + 1;
+        while (uri_start < len && line[uri_start] == ' ') {
+            uri_start++;
+        }
+        
+        // L'URI doit commencer par / ou être un chemin valide
+        if (uri_start < len && (line[uri_start] == '/' || isprint((unsigned char)line[uri_start]))) {
             return 1;
         }
     }
+    
     return 0;
 }
 

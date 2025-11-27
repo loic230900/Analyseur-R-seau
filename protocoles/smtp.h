@@ -27,36 +27,12 @@ int parse_smtp(const u_char *packet, int length, int verbosity, int indent);
  */
 int smtp_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, char *resume);
 
-/* Commandes smtp*/
-#define SMTP_CMD_HELLO      "HELO"
-#define SMTP_CMD_EHLO       "EHLO"
-#define SMTP_CMD_MAIL       "MAIL"
-#define SMTP_CMD_MAIL_FROM  "MAIL FROM"
-#define SMTP_CMD_RCPT       "RCPT"
-#define SMTP_CMD_RCPT_TO    "RCPT TO"
+/* Commande SMTP utilisée pour la détection du contenu du mail */
 #define SMTP_CMD_DATA       "DATA"
-#define SMTP_CMD_QUIT       "QUIT"
-#define SMTP_CMD_RSET       "RSET"
-#define SMTP_CMD_VRFY       "VRFY"
-#define SMTP_CMD_NOOP       "NOOP"
-#define SMTP_CMD_AUTH       "AUTH"
-#define SMTP_CMD_STARTTLS   "STARTTLS"
 
 /* Ports SMTP */
 #define SMTP_PORT_PLAIN 25   // SMTP non-chiffré
 #define SMTP_PORT_SUBMISSION 587  // SMTP soumission (chiffré)
-
-/* code reponse smtp*/
-#define SMTP_CODE_READY             220
-#define SMTP_CODE_CLOSING           221
-#define SMTP_CODE_OK                250
-#define SMTP_CODE_START_MAIL        354
-#define SMTP_CODE_UNAVAILABLE       421
-#define SMTP_CODE_TEMP_FAIL         450
-#define SMTP_CODE_SYNTAX_ERROR      500
-#define SMTP_CODE_NOT_IMPL          502
-#define SMTP_CODE_BAD_SEQUENCE      503
-#define SMTP_CODE_MAILBOX_UNAVAIL   550
 
 
 #endif /* SMTP_H */

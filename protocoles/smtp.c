@@ -17,22 +17,40 @@
 static int is_smtp_command(const char *line, int len) {
     if (len < 4) return 0;
     
-    const char *commands[] = {
-        SMTP_CMD_HELLO, SMTP_CMD_EHLO, SMTP_CMD_MAIL, SMTP_CMD_RCPT, SMTP_CMD_DATA, 
-        SMTP_CMD_QUIT, SMTP_CMD_RSET, SMTP_CMD_VRFY, SMTP_CMD_NOOP, 
-        SMTP_CMD_AUTH, SMTP_CMD_STARTTLS
-    };
-    int num_commands = sizeof(commands) / sizeof(commands[0]);
+    // Vérifier que le premier caractère est alphabétique
+    if (!isalpha((unsigned char)line[0]))
+        return 0;
     
-    for (int i = 0; i < num_commands; i++) {
-        int cmd_len = strlen(commands[i]);
-        if (len >= cmd_len && strncasecmp(line, commands[i], cmd_len) == 0) {
-            // Vérifier qu'après la commande il y a un espace ou fin de ligne
-            if (len == cmd_len || line[cmd_len] == ' ' || line[cmd_len] == ':')
-                return 1;
+    // Compter les caractères alphabétiques consécutifs
+    // Les commandes SMTP standard font 4 caractères, mais certaines extensions peuvent être plus longues
+    int cmd_len = 0;
+    while (cmd_len < len && cmd_len < 20 && isalpha((unsigned char)line[cmd_len])) {
+        cmd_len++;
+    }
+    
+    // Une commande SMTP doit avoir au moins 4 caractères (HELO, MAIL, etc.)
+    if (cmd_len < 4 || cmd_len > 20)
+        return 0;
+    
+    // Vérifier que tous les caractères sont en majuscules
+    for (int i = 0; i < cmd_len; i++) {
+        if (!isupper((unsigned char)line[i])) {
+            return 0;
         }
     }
-    return 0;
+    
+    // Après la commande, il doit y avoir :
+    // - Fin de ligne (CRLF ou LF)
+    // - Un espace (suivi d'arguments)
+    // - Un ':' (pour certaines commandes comme MAIL FROM:)
+    if (cmd_len < len) {
+        unsigned char next = (unsigned char)line[cmd_len];
+        if (next != ' ' && next != '\r' && next != '\n' && next != ':' && next != '\t') {
+            return 0;
+        }
+    }
+    
+    return 1;
 }
 
 /**
@@ -174,7 +192,6 @@ static int parse_smtp_response(const u_char *packet, int length, int verbosity, 
     offset = next;
     
     // Les réponses multi-lignes (code suivi de '-')
-    // Par exemple : "250-smtp.example.com\r\n250 SIZE 35882577\r\n"
     while (offset < length) {
         next = text_extract_line(packet, offset, length, line, sizeof(line));
         if (next < 0) break;
