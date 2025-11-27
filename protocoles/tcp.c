@@ -103,7 +103,7 @@ int parse_tcp(const u_char *packet, int length, int verbosity, int indent, uint1
                 printf("Options: %d bytes\n", options_len);
                 
                 // Parser les options TCP courantes
-                const u_char *options = packet + 20;  // 20 = taille fixe en-tête TCP
+                    const u_char *options = packet + 20;  // 20 = taille fixe en-tête TCP
                 int offset = 0;
                 int parsed_any = 0;
                 

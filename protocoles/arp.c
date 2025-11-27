@@ -44,7 +44,7 @@ int parse_arp(const u_char *packet, int length, int verbosity, int indent){
         } else if(opcode == ARPOP_REPLY){
             printf("ARP %s is-at %s\n", src_ip, src_mac);
         } else {
-            printf("ARP %s: %s (%s) -> %s (%s)\n", op_str, src_ip, src_mac, dst_ip, dst_mac);
+        printf("ARP %s: %s (%s) -> %s (%s)\n", op_str, src_ip, src_mac, dst_ip, dst_mac);
         }
     }
     //verbosite 3 detaillee

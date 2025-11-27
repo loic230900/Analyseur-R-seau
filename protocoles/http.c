@@ -197,7 +197,7 @@ static int parse_http_request(const u_char *packet, int length, int verbosity, i
         if(strlen(host_header) > 0) {
             printf("HTTP Request: %s %s %s [Host: %s]\n", method, uri, version, host_header);
         } else {
-            printf("HTTP Request: %s %s %s\n", method, uri, version);
+        printf("HTTP Request: %s %s %s\n", method, uri, version);
         }
     }
     else if (verbosity == 3){ // verbosite 3
@@ -592,11 +592,11 @@ int http_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
             }
         } else {
             // Pas de Host header trouvé
-            if(strlen(resume) + strlen(method) + strlen(uri) + 10 < 255) {
-                strcat(resume, " | HTTP ");
-                strcat(resume, method);
-                strcat(resume, " ");
-                strcat(resume, uri);
+        if(strlen(resume) + strlen(method) + strlen(uri) + 10 < 255) {
+            strcat(resume, " | HTTP ");
+            strcat(resume, method);
+            strcat(resume, " ");
+            strcat(resume, uri);
             }
         }
         return 1;

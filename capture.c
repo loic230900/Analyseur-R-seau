@@ -407,7 +407,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
         else if(ethertype == ETHERTYPE_REVARP){ //RARP
             strcat(resume, "RARP");
             rarp_v1_summary(packet, header->caplen, 14, resume); //ajout who-is / is-at 
-        }
+        } 
         else if(ethertype == ETHERTYPE_IP){ //IPv4
             strcat(resume, "IPv4");
             if(header->caplen >= 14 + (int)sizeof(struct iphdr)){
