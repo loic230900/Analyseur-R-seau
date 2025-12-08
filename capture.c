@@ -21,7 +21,8 @@ typedef enum {
     APP_PROTO_TCP_IMAPS,
     APP_PROTO_TCP_POP3,
     APP_PROTO_TCP_POP3S,
-    APP_PROTO_TCP_FTP
+    APP_PROTO_TCP_FTP,
+    APP_PROTO_TCP_TELNET
 } app_proto_tcp_t;
 
 typedef enum {
@@ -109,6 +110,13 @@ static app_proto_tcp_t detect_app_tcp_v1(uint16_t src_port, uint16_t dst_port,
         }
     }
     
+    // Telnet (priorité 9) - port 23, nécessite payload
+    if(src_port == TELNET_PORT || dst_port == TELNET_PORT) {
+        if(tcp_payload_len > 0) {
+            return APP_PROTO_TCP_TELNET;
+        }
+    }
+    
     return APP_PROTO_TCP_NONE;
 }
 
@@ -185,6 +193,13 @@ static app_proto_tcp_t detect_app_tcp_v2v3(uint16_t src_port, uint16_t dst_port,
         }
     }
     
+    // Telnet (priorité 9) - port 23, nécessite payload
+    if(src_port == TELNET_PORT || dst_port == TELNET_PORT) {
+        if(length > 0) {
+            return APP_PROTO_TCP_TELNET;
+        }
+    }
+    
     return APP_PROTO_TCP_NONE;
 }
 
@@ -216,11 +231,14 @@ static app_proto_udp_t detect_app_udp_v1(uint16_t src_port, uint16_t dst_port) {
  * @param caplen Longueur capturée
  * @param tcp_payload_offset Offset du payload TCP
  * @param resume Buffer de sortie pour le résumé
+ * @param src_port Port source TCP (pour Telnet)
+ * @param dst_port Port destination TCP (pour Telnet)
  * @return 1 si traitement réussi, 0 sinon
  */
 static int process_app_tcp_v1(app_proto_tcp_t proto,
                                const u_char *packet, int caplen,
-                               int tcp_payload_offset, char *resume) {
+                               int tcp_payload_offset, char *resume,
+                               uint16_t src_port, uint16_t dst_port) {
     switch(proto) {
         case APP_PROTO_TCP_DNS:
             strcat(resume, " | DNS");
@@ -247,6 +265,9 @@ static int process_app_tcp_v1(app_proto_tcp_t proto,
             
         case APP_PROTO_TCP_FTP:
             return ftp_v1_summary(packet, caplen, tcp_payload_offset, resume);
+            
+        case APP_PROTO_TCP_TELNET:
+            return telnet_v1_summary(packet, caplen, tcp_payload_offset, resume, src_port, dst_port);
             
         default:
             return 0;
@@ -356,6 +377,10 @@ static int process_app_tcp_v2v3(app_proto_tcp_t proto,
             consumed = parse_ftp(packet, length, verbosity, indent);
             break;
             
+        case APP_PROTO_TCP_TELNET:
+            consumed = parse_telnet(packet, length, verbosity, indent);
+            break;
+            
         default:
             consumed = 0;
             break;
@@ -463,7 +488,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                                                                         header->caplen, tcp_payload_offset);
                             if(detected != APP_PROTO_TCP_NONE) {
                                 process_app_tcp_v1(detected, packet, header->caplen,
-                                                   tcp_payload_offset, resume);
+                                                   tcp_payload_offset, resume, sp, dp);
                             }
                         }
                     } 
@@ -516,7 +541,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                                                                     header->caplen, tcp_payload_offset);
                         if(detected != APP_PROTO_TCP_NONE) {
                             process_app_tcp_v1(detected, packet, header->caplen,
-                                               tcp_payload_offset, resume);
+                                               tcp_payload_offset, resume, sp, dp);
                         }
                     }
                 } 

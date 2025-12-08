@@ -21,6 +21,7 @@
 #include "imap.h"
 #include "pop3.h"
 #include "ftp.h"
+#include "telnet.h"
 #include "../util/textutils.h"
 
 
