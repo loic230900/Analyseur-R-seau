@@ -3,3 +3,5 @@
 #fichier .o
 *.o
 *.obj
+obj/
+.github
