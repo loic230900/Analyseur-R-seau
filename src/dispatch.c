@@ -52,11 +52,12 @@ int process_app_tcp_v1(app_proto_tcp_t proto,
                        const char *src_ip, const char *dst_ip) {
     int result = 0;
     
+    /* Note: tcp_v1_flags_summary() a déjà ajouté " | TCP ..." au resume */
+    
     switch(proto) {
         // DNS sur TCP 
         case APP_PROTO_TCP_DNS: {
-            size_t len = strlen(resume);
-            snprintf(resume + len, RESUME_BUFFER_SIZE - len, " | DNS (TCP)");
+            safe_strcat(resume, " | DNS", RESUME_BUFFER_SIZE);
             return dns_v1_summary(packet, caplen, tcp_payload_offset, resume, 1);
         }
         
@@ -176,22 +177,23 @@ int process_app_udp_v1(app_proto_udp_t proto,
     switch(proto) {
         // DNS sur UDP 
         case APP_PROTO_UDP_DNS: {
-            size_t len = strlen(resume);
-            snprintf(resume + len, RESUME_BUFFER_SIZE - len, " | DNS");
-            return dns_v1_summary(packet, caplen, udp_payload_offset, resume, 0);
+            safe_strcat(resume, " | UDP | DNS", RESUME_BUFFER_SIZE);
+            dns_v1_summary(packet, caplen, udp_payload_offset, resume, 0);
+            result = 2;  // Ajouter les IPs après le résumé DNS
+            break;
         }
         
         // DHCP (ports 67/68)
         case APP_PROTO_UDP_DHCP: {
-            size_t len = strlen(resume);
-            snprintf(resume + len, RESUME_BUFFER_SIZE - len, " | DHCP");
-            return dhcp_v1_summary(packet, caplen, udp_payload_offset, resume);
+            safe_strcat(resume, " | UDP | DHCP", RESUME_BUFFER_SIZE);
+            dhcp_v1_summary(packet, caplen, udp_payload_offset, resume);
+            result = 2;  // Ajouter les IPs après le résumé DHCP
+            break;
         }
         
-        // QUIC / HTTP/3 seulemetn detecte pour le bruit visuelle lors de captures
+        // QUIC / HTTP/3 seulement detecte pour le bruit visuel lors de captures
         case APP_PROTO_UDP_QUIC: {
-            size_t len = strlen(resume);
-            snprintf(resume + len, RESUME_BUFFER_SIZE - len, " | QUIC");
+            safe_strcat(resume, " | UDP | QUIC", RESUME_BUFFER_SIZE);
             result = 2;  // Code spécial pour ajouter les IPs
             break;
         }
@@ -200,7 +202,7 @@ int process_app_udp_v1(app_proto_udp_t proto,
             return 0;
     }
     
-    /* Ajouter les IPs uniquement pour les protocoles chiffrés/opaques (result == 2) */
+    /* Ajouter les IPs pour tous les protocoles UDP connus */
     if(result == 2) {
         char ip_info[128];
         snprintf(ip_info, sizeof(ip_info), " %s[%u] -> %s[%u]", src_ip, src_port, dst_ip, dst_port);

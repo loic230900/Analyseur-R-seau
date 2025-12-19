@@ -20,6 +20,7 @@
 #include "dhcp.h"
 #include "icmp.h"
 #include "icmpv6.h"
+#include "igmp.h"
 #include "ndp.h"
 #include "dns.h"
 #include "bootp.h"

@@ -76,6 +76,10 @@ static void handle_transport_layer_v1(const u_char *packet, int caplen,
     else if(protocol == IPPROTO_ICMPV6) {
         icmpv6_v1_summary(packet, caplen, l4_offset, resume, dst_ip);
     }
+    // Traitement IGMP (multicast)
+    else if(protocol == IPPROTO_IGMP) {
+        igmp_v1_summary(packet, caplen, l4_offset, resume, dst_ip);
+    }
     // Traitement TCP
     else if(protocol == IPPROTO_TCP) { 
         // Calculer la longueur du payload TCP pour la détection applicative
@@ -123,7 +127,16 @@ static void handle_transport_layer_v1(const u_char *packet, int caplen,
                 /* Afficher les ports génériques si pas d'application reconnue */
                 udp_v1_ports_summary(packet, caplen, l4_offset, resume, src_ip, dst_ip);
             }
+        } else {
+            /* En-tête UDP tronqué - afficher quand même UDP */
+            safe_strcat(resume, " | UDP (truncated)", RESUME_BUFFER_SIZE);
         }
+    }
+    /* Protocole de transport non géré */
+    else {
+        char proto_info[64];
+        snprintf(proto_info, sizeof(proto_info), " | Proto=%u", protocol);
+        safe_strcat(resume, proto_info, RESUME_BUFFER_SIZE);
     }
 }
 
@@ -202,6 +215,14 @@ static void handle_transport_layer_v2v3(const u_char *packet, int caplen,
         int icmpv6_len = parse_icmpv6(packet + *offset, caplen - *offset, verbosity, *indent);
         if(icmpv6_len > 0) {
             *offset += icmpv6_len;
+            *indent += 2;
+        }
+    }
+    // Traitement IGMP (IPv4 uniquement)
+    else if(protocol == IPPROTO_IGMP && !is_ipv6) {
+        int igmp_len = parse_igmp(packet + *offset, caplen - *offset, verbosity, *indent);
+        if(igmp_len > 0) {
+            *offset += igmp_len;
             *indent += 2;
         }
     }
