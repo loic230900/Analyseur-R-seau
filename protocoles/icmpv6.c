@@ -24,6 +24,11 @@ const char* get_icmpv6_type_name(uint8_t type) {
         case ND_NEIGHBOR_SOLICIT: return "Neighbor Solicitation (NDP)";
         case ND_NEIGHBOR_ADVERT: return "Neighbor Advertisement (NDP)";
         case ND_REDIRECT: return "Redirect (NDP)";
+        /* MLD - Multicast Listener Discovery */
+        case MLD_LISTENER_QUERY: return "MLD Query";
+        case MLD_LISTENER_REPORT: return "MLDv1 Report";
+        case MLD_LISTENER_REDUCTION: return "MLDv1 Done";
+        case MLD2_LISTENER_REPORT: return "MLDv2 Report";
         default: return "Unknown";
     }
 }
@@ -83,6 +88,19 @@ static void get_icmpv6_summary_string(uint8_t type, uint8_t code, char *output, 
         // Parameter Problem
         case ICMP6_PARAM_PROB:
             strncpy(output, "Param Prob", output_len);
+            break;
+        // MLD - Multicast Listener Discovery
+        case MLD_LISTENER_QUERY:
+            strncpy(output, "MLD Query", output_len);
+            break;
+        case MLD_LISTENER_REPORT:
+            strncpy(output, "MLDv1 Report", output_len);
+            break;
+        case MLD_LISTENER_REDUCTION:
+            strncpy(output, "MLDv1 Done", output_len);
+            break;
+        case MLD2_LISTENER_REPORT:
+            strncpy(output, "MLDv2 Report", output_len);
             break;
         default:
             snprintf(output, output_len, "T%u", type);

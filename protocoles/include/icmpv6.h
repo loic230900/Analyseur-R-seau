@@ -18,6 +18,12 @@
 #define IPPROTO_ICMPV6 58
 #endif
 
+/* Types MLD (Multicast Listener Discovery) - les autres dans la librairie système
+rajouter au projet parce que capturer sur prise live  */
+#ifndef MLD2_LISTENER_REPORT
+#define MLD2_LISTENER_REPORT  143 
+#endif
+
 /**
  * Analyse et affiche les champs de l'en-tête ICMPv6.
  * Délègue au parser NDP si c'est un message NDP (types 133-137).
