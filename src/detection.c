@@ -58,18 +58,12 @@ static int port_matches(uint16_t src, uint16_t dst, uint16_t p1, uint16_t p2) {
  * Détecte le protocole applicatif TCP basé sur les ports.
  * Ignore les paquets sans payload (SYN/ACK/FIN).
  * 
- * @param src_port        Port source TCP.
- * @param dst_port        Port destination TCP.
- *  @param payload_len     Longueur du payload TCP.
- * @param payload_start   Pointeur vers le début du payload TCP.
- * @param check_tls       Indicateur pour vérifier TLS (1=oui, 0  =non).
+ * @param src_port    Port source TCP.
+ * @param dst_port    Port destination TCP.
+ * @param payload_len Longueur du payload TCP.
  * @return Protocole détecté ou APP_PROTO_TCP_NONE.
  */
-app_proto_tcp_t detect_app_tcp(uint16_t src_port, uint16_t dst_port,int payload_len,
-                                const u_char *payload_start, int check_tls) {
-    (void)payload_start;
-    (void)check_tls;
-    
+app_proto_tcp_t detect_app_tcp(uint16_t src_port, uint16_t dst_port, int payload_len) {
     if (payload_len <= 0) return APP_PROTO_TCP_NONE;
     
     for (size_t i = 0; i < TCP_SERVICES_COUNT; i++) {

@@ -8,8 +8,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
-#include "util/textutils.h"
-#include "util/safe_string.h"
+#include "../util/textutils.h"
+#include "../util/safe_string.h"
 
 /**
  * Vérifie si une ligne est une commande SMTP (4+ lettres majuscules)

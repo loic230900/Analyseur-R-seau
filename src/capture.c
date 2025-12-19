@@ -95,11 +95,9 @@ static void handle_transport_layer_v1(const u_char *packet, int caplen,
             int tcp_header_len = tcp->doff * 4;
             int tcp_payload_offset = l4_offset + tcp_header_len;
             int tcp_payload_len = caplen - tcp_payload_offset;
-            const u_char *tcp_payload_start = packet + tcp_payload_offset;
             
-            /* Détection basée sur les ports (check_tls=0 pour détecter HTTPS même sans handshake) */
-            app_proto_tcp_t detected = detect_app_tcp(sp, dp, tcp_payload_len, 
-                                                       tcp_payload_start, 0);
+            /* Détection basée sur les ports */
+            app_proto_tcp_t detected = detect_app_tcp(sp, dp, tcp_payload_len);
             if(detected != APP_PROTO_TCP_NONE) {
                 process_app_tcp_v1(detected, packet, caplen, tcp_payload_offset, 
                                    resume, sp, dp, src_ip, dst_ip);
@@ -180,10 +178,9 @@ static void handle_transport_layer_v2v3(const u_char *packet, int caplen,
             *offset += tcp_len;
             *indent += 2;
             
-            // Détection avec vérification TLS pour différencier HTTPS/SMTPS/etc.
+            // Détection basée sur les ports
             app_proto_tcp_t detected = detect_app_tcp(src_port, dst_port,
-                                                      caplen - *offset,
-                                                      packet + *offset, 1);
+                                                      caplen - *offset);
             if(detected != APP_PROTO_TCP_NONE) {
                 int consumed = process_app_tcp_v2v3(detected, packet + *offset, caplen - *offset, verbosity, *indent, offset, src_port, dst_port);
                 if(consumed > 0) {

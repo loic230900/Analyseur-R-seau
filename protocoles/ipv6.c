@@ -1,7 +1,7 @@
 /**
  * Implémente le parsing IPv6 conformément à la RFC 8200.
  * En-tête fixe de 40 octets + en-têtes d'extension variables.
- * EtherType : 0x86DDs
+ * EtherType : 0x86DD
  */
 
 #include "ipv6.h"

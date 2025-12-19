@@ -48,18 +48,16 @@ typedef enum {
 
 // FONCTIONS DE DÉTECTION
 /**
- * Analyse les ports source/destination et optionnellement la signature TLS
- * pour identifier le protocole de la couche application.
+ * Analyse les ports source/destination pour identifier le protocole
+ * de la couche application.
  * 
- * @param src_port      Port source de la connexion
- * @param dst_port      Port destination de la connexion
- * @param payload_len   Longueur du payload TCP disponible
- * @param payload_start Pointeur vers le début du payload 
- * @param check_tls     Activer la vérification de signature TLS (1/0)
+ * @param src_port    Port source de la connexion
+ * @param dst_port    Port destination de la connexion
+ * @param payload_len Longueur du payload TCP disponible
  * 
  * @return Protocole détecté (app_proto_tcp_t) ou APP_PROTO_TCP_NONE si aucun
  */
-app_proto_tcp_t detect_app_tcp(uint16_t src_port, uint16_t dst_port, int payload_len, const u_char *payload_start, int check_tls);
+app_proto_tcp_t detect_app_tcp(uint16_t src_port, uint16_t dst_port, int payload_len);
 
 /**
  * Analyse les ports source/destination pour identifier le protocole
