@@ -1,6 +1,35 @@
+/**
+
+Analyseur de messages POP3 (couche 7 - Application)
+ * 
+ * Ce module implémente le parsing des échanges POP3 conformément à la RFC 1939.
+ * POP3 (Post Office Protocol version 3) permet la récupération des mails
+ * depuis un serveur. Les mails sont téléchargés puis supprimés du serveur.
+ * 
+ * Caractéristiques :
+ * - Protocole textuel basé sur des lignes (CRLF)
+ * - Ports standard : 110 (POP3), 995 (POP3S/TLS)
+ * - Réponses préfixées par +OK ou -ERR
+ * 
+ * Commandes POP3 principales :
+ * - USER/PASS : Authentification
+ * - STAT : Statistiques boîte aux lettres
+ * - LIST : Liste des messages
+ * - RETR : Récupération d'un message
+ * - DELE : Marquage pour suppression
+ * - QUIT : Fin de session et commit
+ * - NOOP : Keep-alive
+ * - RSET : Annulation des suppressions
+ * 
+ * Sécurité : masquage automatique des mots de passe (PASS ****).
+ * 
+ */
+
 #include "pop3.h"
 #include "../util/textutils.h"
 #include "../hexdump.h"
+#include "../util/safe_string.h"
+#include "../util/display_constants.h"
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
@@ -44,8 +73,8 @@ static int is_pop3_command(const char *line, int len) {
     int num_commands = sizeof(commands) / sizeof(commands[0]);
     
     for (int i = 0; i < num_commands; i++) {
-        int cmd_len = strlen(commands[i]);
-        if (len >= cmd_len && strncasecmp(line, commands[i], cmd_len) == 0) {
+        int cmd_len = (int)strlen(commands[i]);
+        if (len >= cmd_len && strncasecmp(line, commands[i], (size_t)cmd_len) == 0) {
             // Vérifier qu'après la commande il y a un espace ou fin de ligne
             if (len == cmd_len || line[cmd_len] == ' ' || line[cmd_len] == '\r' || line[cmd_len] == '\n')
                 return 1;
@@ -93,22 +122,22 @@ static int parse_pop3_command(const u_char *packet, int length, int verbosity, i
 
     // Verbosité 2 : affichage concis
     if (verbosity == 2) {
-        for (int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("POP3 Command: %s\n", line);
     }
     // Verbosité 3 : affichage détaillé
     else if (verbosity == 3) {
-        for (int i = 0; i < indent; i++) printf(" ");
-        printf("POP3 Command:\n");
+        print_indent(indent);
+        printf("[L7] POP3 Command:\n");
         
         // Extraire la commande et les arguments
         char cmd[16] = "";
         char args[256] = "";
         char *space = strchr(line, ' ');
         if (space) {
-            int cmd_len = space - line;
+            int cmd_len = (int)(space - line);
             if (cmd_len < 16) {
-                strncpy(cmd, line, cmd_len);
+                strncpy(cmd, line, (size_t)cmd_len);
                 cmd[cmd_len] = '\0';
             }
             // Arguments après l'espace
@@ -116,14 +145,20 @@ static int parse_pop3_command(const u_char *packet, int length, int verbosity, i
             while (*arg_start == ' ') arg_start++;
             strncpy(args, arg_start, sizeof(args) - 1);
         } else {
-            strncpy(cmd, line, sizeof(cmd) - 1);
+            int max_cmd_len = (int)sizeof(cmd) - 1;
+            int line_len = (int)strlen(line);
+            int copy_len = (line_len < max_cmd_len) ? line_len : max_cmd_len;
+            if (copy_len > 0) {
+                memcpy(cmd, line, (size_t)copy_len);
+            }
+            cmd[copy_len] = '\0';
         }
         
-        for (int i = 0; i < indent + 2; i++) printf(" ");
+        print_indent(indent + 2);
         printf("Command: %s\n", cmd);
         
         if (strlen(args) > 0) {
-            for (int i = 0; i < indent + 2; i++) printf(" ");
+            print_indent(indent + 2);
             printf("Arguments: %s\n", args);
         }
     }
@@ -159,17 +194,29 @@ static int parse_pop3_response(const u_char *packet, int length, int verbosity, 
         // Message après "+OK "
         char *msg_start = line + 3;
         while (*msg_start == ' ') msg_start++;
-        strncpy(message, msg_start, sizeof(message) - 1);
+        int max_msg_len = (int)sizeof(message) - 1;
+        int msg_src_len = (int)strlen(msg_start);
+        int copy_len = (msg_src_len < max_msg_len) ? msg_src_len : max_msg_len;
+        if (copy_len > 0) {
+            memcpy(message, msg_start, (size_t)copy_len);
+        }
+        message[copy_len] = '\0';
     } else if (is_err && strlen(line) > 4) {
         // Message après "-ERR "
         char *msg_start = line + 4;
         while (*msg_start == ' ') msg_start++;
-        strncpy(message, msg_start, sizeof(message) - 1);
+        int max_msg_len = (int)sizeof(message) - 1;
+        int msg_src_len = (int)strlen(msg_start);
+        int copy_len = (msg_src_len < max_msg_len) ? msg_src_len : max_msg_len;
+        if (copy_len > 0) {
+            memcpy(message, msg_start, (size_t)copy_len);
+        }
+        message[copy_len] = '\0';
     }
 
     // Verbosité 2
     if (verbosity == 2) {
-        for (int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         if (is_ok) {
             printf("POP3 Response: +OK");
         } else if (is_err) {
@@ -183,10 +230,10 @@ static int parse_pop3_response(const u_char *packet, int length, int verbosity, 
     }
     // Verbosité 3
     else if (verbosity == 3) {
-        for (int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("POP3 Response:\n");
         
-        for (int i = 0; i < indent + 2; i++) printf(" ");
+        print_indent(indent + 2);
         if (is_ok) {
             printf("Status: +OK\n");
         } else if (is_err) {
@@ -194,7 +241,7 @@ static int parse_pop3_response(const u_char *packet, int length, int verbosity, 
         }
         
         if (strlen(message) > 0) {
-            for (int i = 0; i < indent + 2; i++) printf(" ");
+            print_indent(indent + 2);
             printf("Message: %s\n", message);
         }
     }
@@ -219,7 +266,7 @@ static int parse_pop3_response(const u_char *packet, int length, int verbosity, 
             
             // Afficher les lignes intermédiaires en verbosité 3
             if (verbosity == 3) {
-                for (int i = 0; i < indent + 2; i++) printf(" ");
+                print_indent(indent + 2);
                 printf("  %s\n", line);
             }
             
@@ -243,7 +290,7 @@ int parse_pop3(const u_char *packet, int length, int verbosity, int indent) {
     // Convertir le début en string pour analyse
     char header_start[512];
     int preview_len = (length < 511) ? length : 511;
-    memcpy(header_start, packet, preview_len);
+    memcpy(header_start, packet, (size_t)preview_len);
     header_start[preview_len] = '\0';
 
     // Détection commande ou réponse
@@ -260,7 +307,7 @@ int parse_pop3(const u_char *packet, int length, int verbosity, int indent) {
         int is_text = text_is_printable(packet, length > 200 ? 200 : length);
         
         if (is_text) {
-            for (int i = 0; i < indent; i++) printf(" ");
+            print_indent(indent);
             printf("POP3 Mail Data: %d bytes\n", length);
             
             // Chercher la fin du mail (ligne ".\r\n")
@@ -277,12 +324,12 @@ int parse_pop3(const u_char *packet, int length, int verbosity, int indent) {
             
             int display_len = (mail_end > 0 && mail_end < length) ? mail_end : (length > 500 ? 500 : length);
             
-            for (int i = 0; i < indent; i++) printf(" ");
+            print_indent(indent);
             printf("---\n");
-            fwrite(packet, 1, display_len, stdout);
+            fwrite(packet, 1, (size_t)display_len, stdout);
             if (length > display_len) printf("\n... (truncated)");
             printf("\n");
-            for (int i = 0; i < indent; i++) printf(" ");
+            print_indent(indent);
             printf("---\n");
             
             return (mail_end > 0) ? mail_end : length;
@@ -291,7 +338,7 @@ int parse_pop3(const u_char *packet, int length, int verbosity, int indent) {
     
     // Sinon, affichage générique pour verbosité 2
     if (verbosity == 2 && length > 0) {
-        for (int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("POP3 Data: %d bytes\n", length);
         return length;
     }
@@ -314,7 +361,7 @@ int pop3_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
     if (end < 0 || end > 127)
         return 0;
 
-    memcpy(line, pop3, end);
+    memcpy(line, pop3, (size_t)end);
     line[end] = '\0';
     mask_pass_password(line);
 
@@ -331,9 +378,7 @@ int pop3_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
             snprintf(info, sizeof(info), " | POP3 %s", cmd);
         }
         
-        if (strlen(resume) + strlen(info) < 255) {
-            strcat(resume, info);
-        }
+        safe_strcat(resume, info, RESUME_BUFFER_SIZE);
         return 1;
     }
     // Réponse POP3
@@ -345,20 +390,20 @@ int pop3_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
                 // +OK
                 char *msg_start = line + 3;
                 while (*msg_start == ' ') msg_start++;
-                int msg_len = end - (msg_start - line);
+                int msg_len = (int)(end - (msg_start - line));
                 if (msg_len > 63) msg_len = 63;
                 if (msg_len > 0) {
-                    memcpy(msg, msg_start, msg_len);
+                    memcpy(msg, msg_start, (size_t)msg_len);
                     msg[msg_len] = '\0';
                 }
             } else if (resp_type == -1 && end > 4) {
                 // -ERR
                 char *msg_start = line + 4;
                 while (*msg_start == ' ') msg_start++;
-                int msg_len = end - (msg_start - line);
+                int msg_len = (int)(end - (msg_start - line));
                 if (msg_len > 63) msg_len = 63;
                 if (msg_len > 0) {
-                    memcpy(msg, msg_start, msg_len);
+                    memcpy(msg, msg_start, (size_t)msg_len);
                     msg[msg_len] = '\0';
                 }
             }
@@ -378,9 +423,7 @@ int pop3_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
                 }
             }
             
-            if (strlen(resume) + strlen(info) < 255) {
-                strcat(resume, info);
-            }
+            safe_strcat(resume, info, RESUME_BUFFER_SIZE);
             return 1;
         }
     }

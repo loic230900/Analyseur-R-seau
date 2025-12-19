@@ -1,10 +1,38 @@
+/**
+
+Analyseur de messages IMAP (couche 7 - Application)
+ * 
+ * Ce module implémente le parsing des échanges IMAP conformément aux RFCs :
+ * - RFC 3501 : IMAP4rev1 (Internet Message Access Protocol)
+ * - RFC 2595 : STARTTLS Extension
+ * 
+ * IMAP permet l'accès et la gestion des mails sur un serveur distant.
+ * Contrairement à POP3, les mails restent sur le serveur.
+ * 
+ * Caractéristiques :
+ * - Protocole textuel basé sur des lignes (CRLF)
+ * - Ports standard : 143 (IMAP), 993 (IMAPS/TLS)
+ * - Commandes préfixées par un tag (ex: A001 LOGIN ...)
+ * 
+ * Commandes IMAP principales :
+ * - CAPABILITY : Liste des extensions supportées
+ * - LOGIN/AUTHENTICATE : Authentification
+ * - SELECT/EXAMINE : Sélection de boîte aux lettres
+ * - FETCH : Récupération de messages
+ * - SEARCH : Recherche de messages
+ * - STORE : Modification de flags
+ * - LOGOUT : Déconnexion
+ * 
+ */
+
 #include "imap.h"
-#include "../util/textutils.h"  // ← Utilise le module commun
+#include "../util/textutils.h"  /* Utilise le module commun */
 #include "../hexdump.h"
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include "../util/safe_string.h"
 
 /**
  * Masque le mot de passe dans une commande LOGIN
@@ -56,7 +84,7 @@ static int imap_parse_tagged_command(char *line, char *tag, int tag_sz, char *cm
     while(isalpha((unsigned char)*p) && i < cmd_sz -1){ cmd[i++] = *p++; }
     cmd[i]='\0';
     while(*p==' ') p++;
-    strncpy(args, p, args_sz-1); args[args_sz-1]='\0';
+    strncpy(args, p, (size_t)(args_sz-1)); args[args_sz-1]='\0';
     return 1;
 }
 
@@ -89,7 +117,7 @@ int parse_imap(const u_char *packet, int length, int verbosity, int indent){
     int line_count = 0;
 
     if(verbosity >= 2){
-        for(int i=0;i<indent;i++) printf(" ");
+        print_indent(indent);
         printf("IMAP:\n");
     }
 
@@ -108,24 +136,24 @@ int parse_imap(const u_char *packet, int length, int verbosity, int indent){
             if(imap_is_tagged_command(line)){
                 char tag[32], cmd[32], args[256];
                 if(imap_parse_tagged_command(line, tag, sizeof(tag), cmd, sizeof(cmd), args, sizeof(args))){
-                    for(int i=0;i<indent+2;i++) printf(" ");
+                    print_indent(indent + 2);
                     printf("C %s %s %s\n", tag, cmd, args);
                     
                     // Détection STARTTLS
                     if(!strcasecmp(cmd, "STARTTLS")){
-                        for(int i=0;i<indent+4;i++) printf(" ");
+                        print_indent(indent + 4);
                         printf("(Note: subsequent traffic will be TLS encrypted)\n");
                     }
                 }
             } else if(imap_is_tagged_response(line)){
-                for(int i=0;i<indent+2;i++) printf(" ");
+                print_indent(indent + 2);
                 printf("S %s\n", line);
             } else if(imap_is_untagged(line)){
-                for(int i=0;i<indent+2;i++) printf(" ");
+                print_indent(indent + 2);
                 printf("* %s\n", line+2);
             } else {
                 // Autres (peut être continuation literal ou IDLE data)
-                for(int i=0;i<indent+2;i++) printf(" ");
+                print_indent(indent + 2);
                 printf("? %s\n", line);
             }
         } 
@@ -133,21 +161,21 @@ int parse_imap(const u_char *packet, int length, int verbosity, int indent){
             if(imap_is_tagged_command(line)){
                 char tag[32], cmd[32], args[256];
                 if(imap_parse_tagged_command(line, tag, sizeof(tag), cmd, sizeof(cmd), args, sizeof(args))){
-                    for(int i=0;i<indent+2;i++) printf(" ");
-                    printf("Client Command:\n");
-                    for(int i=0;i<indent+4;i++) printf(" ");
-                    printf("Tag: %s\n", tag);
-                    for(int i=0;i<indent+4;i++) printf(" ");
-                    printf("Command: %s\n", cmd);
+                    print_indent(indent);
+                    printf("[L7] IMAP Client Command:\n");
+                    print_indent(indent);
+                    printf("      Tag: %s\n", tag);
+                    print_indent(indent);
+                    printf("      Command: %s\n", cmd);
                     if(strlen(args)>0){
-                        for(int i=0;i<indent+4;i++) printf(" ");
-                        printf("Args: %s\n", args);
+                        print_indent(indent);
+                        printf("      Args: %s\n", args);
                     }
                     
                     // Détection STARTTLS
                     if(!strcasecmp(cmd, "STARTTLS")){
-                        for(int i=0;i<indent+4;i++) printf(" ");
-                        printf("Note: After this command, subsequent traffic will be TLS encrypted.\n");
+                        print_indent(indent);
+                        printf("      Note: After this command, subsequent traffic will be TLS encrypted.\n");
                     }
                 }
             } else if(imap_is_tagged_response(line)){
@@ -155,36 +183,40 @@ int parse_imap(const u_char *packet, int length, int verbosity, int indent){
                 char rest[400]="";
                 // Extraire tag + status + message
                 sscanf(line, "%31s %15s %399[^\r\n]", tag, status, rest);
-                for(int i=0;i<indent+2;i++) printf(" ");
-                printf("Server Response:\n");
-                for(int i=0;i<indent+4;i++) printf(" ");
-                printf("Tag: %s\n", tag);
-                for(int i=0;i<indent+4;i++) printf(" ");
-                printf("Status: %s\n", status);
+                print_indent(indent);
+                printf("[L7] IMAP Server Response:\n");
+                print_indent(indent);
+                printf("      Tag: %s\n", tag);
+                print_indent(indent);
+                printf("      Status: %s\n", status);
                 if(strlen(rest)>0){
-                    for(int i=0;i<indent+4;i++) printf(" ");
-                    printf("Info: %s\n", rest);
+                    print_indent(indent);
+                    printf("      Info: %s\n", rest);
                 }
             } else if(imap_is_untagged(line)){
                 // Exemple: "* 23 EXISTS" / "* OK [CAPABILITY ...]"
-                for(int i=0;i<indent+2;i++) printf(" ");
-                printf("Untagged: %s\n", line+2);
+                print_indent(indent);
+                printf("[L7] IMAP Untagged:\n");
+                print_indent(indent);
+                printf("      %s\n", line+2);
             } else {
-                for(int i=0;i<indent+2;i++) printf(" ");
-                printf("Other: %s\n", line);
+                print_indent(indent);
+                printf("[L7] IMAP Other:\n");
+                print_indent(indent);
+                printf("      %s\n", line);
             }
         }
 
         consumed = offset;
         // Limiter pour ne pas déborder si énorme blob après FETCH {size}
         if(line_count > 50 && verbosity == 2){
-            for(int i=0;i<indent+2;i++) printf(" ");
-            printf("(Truncated after 50 lines)\n");
+            print_indent(indent);
+            printf("    (Truncated after 50 lines)\n");
             break;
         }
         if(line_count > 120 && verbosity == 3){
-            for(int i=0;i<indent+2;i++) printf(" ");
-            printf("(Truncated after 120 lines)\n");
+            print_indent(indent);
+            printf("    (Truncated after 120 lines)\n");
             break;
         }
     }
@@ -203,7 +235,7 @@ int imap_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
     char line[128];
     int end = text_find_line_end(imap, 0, imap_len);
     if(end < 0 || end > 120) return 0;
-    memcpy(line, imap, end);
+    memcpy(line, imap, (size_t)end);
     line[end] = '\0';
     mask_login_password(line);
 
@@ -213,7 +245,7 @@ int imap_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
         if(imap_parse_tagged_command(line, tag, sizeof(tag), cmd, sizeof(cmd), args, sizeof(args))){
             char info[128];
             snprintf(info, sizeof(info), " | IMAP %s %s", tag, cmd);
-            if(strlen(resume)+strlen(info) < 250) strcat(resume, info);
+            safe_strcat(resume, info, RESUME_BUFFER_SIZE);
             return 1;
         }
     }
@@ -223,7 +255,7 @@ int imap_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
         if(sscanf(line, "%31s %15s", tag, status)==2){
             char info[128];
             snprintf(info, sizeof(info), " | IMAP %s %s", tag, status);
-            if(strlen(resume)+strlen(info) < 250) strcat(resume, info);
+            safe_strcat(resume, info, RESUME_BUFFER_SIZE);
             return 1;
         }
     }
@@ -236,7 +268,7 @@ int imap_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
         char first[32]="";
         sscanf(p, "%31s", first);
         snprintf(info, sizeof(info), " | IMAP * %s", first);
-        if(strlen(resume)+strlen(info) < 250) strcat(resume, info);
+        safe_strcat(resume, info, RESUME_BUFFER_SIZE);
         return 1;
     }
     return 0;

@@ -1,21 +1,42 @@
+/**
+ * @file rarp.c
+ * @brief Analyseur de messages RARP (couche 2 - Liaison de données)
+ * 
+ * Ce module implémente le parsing des messages RARP conformément à la RFC 903.
+ * RARP (Reverse Address Resolution Protocol) permet la résolution d'adresses
+ * MAC en adresses IP (inverse de ARP). Obsolète, remplacé par BOOTP/DHCP.
+ * 
+ * Structure identique à ARP mais avec des opérations différentes :
+ * - Operation 3 : RARP Request
+ * - Operation 4 : RARP Reply
+ * 
+ * EtherType : 0x8035
+ * 
+ * @author Projet Services Réseaux M1 SIRIS
+ * @date 2024-2025
+ */
+
 #include "rarp.h"
 #include <stdio.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include "../util/safe_string.h"
+#include "../util/display_constants.h"
+#include "../util/textutils.h"
 
-// Fonction de parsing
+// Fonction d'analyse
 int parse_rarp(const u_char *packet, int length, int verbosity, int indent){
-    if(length < 28){ // Taille minimale de l'en-tête RARP (identique à ARP)
-        fprintf(stderr, "Erreur: Paquet trop court pour contenir un en-tête RARP.\n");
+    if(length < RARP_HDR_LEN){ // Taille minimale de l'en-tête RARP (identique à ARP)
+        fprintf(stderr, "RARP: Packet too short for RARP header (need %d, got %d)\n", RARP_HDR_LEN, length);
         return 0;
     }
     // Extraction des champs de l'en-tête RARP (même structure que ARP)
     const struct ether_arp *rarp = (const struct ether_arp *)packet;
-    uint16_t opcode = ntohs(rarp->ea_hdr.ar_op); // Operation code
-    uint16_t hw_type = ntohs(rarp->ea_hdr.ar_hrd); // Hardware type
-    uint16_t proto_type = ntohs(rarp->ea_hdr.ar_pro); // Protocol type
+    uint16_t opcode = ntohs(rarp->ea_hdr.ar_op); // Code opération
+    uint16_t hw_type = ntohs(rarp->ea_hdr.ar_hrd); // Type matériel
+    uint16_t proto_type = ntohs(rarp->ea_hdr.ar_pro); // Type protocole
 
-    // String d'opération (RARP utilise des opcodes spécifiques)
+    // Chaîne d'opération (RARP utilise des opcodes spécifiques)
     const char *op_str = (opcode == ARPOP_RREQUEST) ? "Request" : 
                         (opcode == ARPOP_RREPLY) ? "Reply" : "Unknown";
 
@@ -36,58 +57,58 @@ int parse_rarp(const u_char *packet, int length, int verbosity, int indent){
     inet_ntop(AF_INET, &src_addr, src_ip, sizeof(src_ip));
     inet_ntop(AF_INET, &dst_addr, dst_ip, sizeof(dst_ip));
 
-    // Verbosité 2 ligne synthétique
+    /* Verbosité 2: ligne synthétique */
     if(verbosity == 2){
-        for(int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         if(opcode == ARPOP_RREQUEST){
-            printf("RARP who-is %s tell %s\n", src_mac, dst_mac);
+            printf("RARP who-is %s -> tell %s\n", src_mac, dst_mac);
         } else if(opcode == ARPOP_RREPLY){
-            printf("RARP %s is-at %s\n", src_ip, src_mac);
+            printf("RARP %s -> is-at %s\n", src_ip, src_mac);
         } else {
             printf("RARP %s: %s (%s) -> %s (%s)\n", op_str, src_mac, src_ip, dst_mac, dst_ip);
         }
     }
-    // Verbosité 3 détaillée
+    /* Verbosité 3: affichage détaillé avec indicateur de couche */
     else if (verbosity == 3) {
-        for(int i = 0; i < indent; i++) printf(" ");
-        printf("RARP: ");
+        print_indent(indent);
+        printf("[L2] RARP Header:\n");
         if(opcode == ARPOP_RREQUEST){
-            printf("who-is %s tell %s\n", src_mac, dst_mac);
+            print_indent(indent);
+            printf("      Summary: who-is %s -> tell %s\n", src_mac, dst_mac);
         } else if(opcode == ARPOP_RREPLY){
-            printf("%s is-at %s\n", src_ip, src_mac);
+            print_indent(indent);
+            printf("      Summary: %s -> is-at %s\n", src_ip, src_mac);
         } else {
-            printf("%s\n", op_str);
+            print_indent(indent);
+            printf("      Summary: %s\n", op_str);
         }
         
-        for(int i = 0; i < indent; i++) printf(" ");
-        printf("RARP:\n");
+        print_indent(indent);
+        printf("      Operation:    %s (%u)\n", op_str, opcode);
         
-        for(int i = 0; i < indent+2; i++) printf(" ");
-        printf("Operation:     %s (%u)\n", op_str, opcode);
+        print_indent(indent);
+        printf("      Hardware:     Ethernet (%u)\n", hw_type);
         
-        for(int i = 0; i < indent+2; i++) printf(" ");
-        printf("Hardware Type: Ethernet (%u)\n", hw_type);
+        print_indent(indent);
+        printf("      Protocol:     IPv4 (0x%04x)\n", proto_type);
         
-        for(int i = 0; i < indent+2; i++) printf(" ");
-        printf("Protocol Type: IPv4 (0x%04x)\n", proto_type);
+        print_indent(indent);
+        printf("      Sender MAC:   %s\n", src_mac);
         
-        for(int i = 0; i < indent+2; i++) printf(" ");
-        printf("Sender MAC:    %s\n", src_mac);
+        print_indent(indent);
+        printf("      Sender IP:    %s\n", src_ip);
         
-        for(int i = 0; i < indent+2; i++) printf(" ");
-        printf("Sender IP:     %s\n", src_ip);
+        print_indent(indent);
+        printf("      Target MAC:   %s\n", dst_mac);
         
-        for(int i = 0; i < indent+2; i++) printf(" ");
-        printf("Target MAC:    %s\n", dst_mac);
-        
-        for(int i = 0; i < indent+2; i++) printf(" ");
-        printf("Target IP:     %s\n", dst_ip);
+        print_indent(indent);
+        printf("      Target IP:    %s\n", dst_ip);
     }
-    return 28; // Taille fixe de l'en-tête RARP (identique à ARP)
+    return 28;
 }
 
 int rarp_v1_summary(const u_char *packet, int caplen, int offset_after_eth, char *resume){
-    if(caplen < offset_after_eth + 28) return 0;
+    if(caplen < offset_after_eth + RARP_HDR_LEN) return 0;
     const struct ether_arp *rarp = (const struct ether_arp *)(packet + offset_after_eth);
     uint16_t op = ntohs(rarp->ea_hdr.ar_op);
     
@@ -100,11 +121,11 @@ int rarp_v1_summary(const u_char *packet, int caplen, int offset_after_eth, char
         snprintf(tmac, sizeof(tmac), "%02x:%02x:%02x:%02x:%02x:%02x",
                  rarp->arp_tha[0], rarp->arp_tha[1], rarp->arp_tha[2],
                  rarp->arp_tha[3], rarp->arp_tha[4], rarp->arp_tha[5]);
-        if(strlen(resume) < 240){
-            strcat(resume, " who-is ");
-            strcat(resume, smac);
-            strcat(resume, " tell ");
-            strcat(resume, tmac);
+        if(can_append(resume, " who-is ", RESUME_BUFFER_SIZE)){
+            safe_strcat(resume, " who-is ", RESUME_BUFFER_SIZE);
+            safe_strcat(resume, smac, RESUME_BUFFER_SIZE);
+            safe_strcat(resume, " tell ", RESUME_BUFFER_SIZE);
+            safe_strcat(resume, tmac, RESUME_BUFFER_SIZE);
         }
         return 1;
     } else if(op == ARPOP_RREPLY){
@@ -117,11 +138,11 @@ int rarp_v1_summary(const u_char *packet, int caplen, int offset_after_eth, char
         snprintf(smac, sizeof(smac), "%02x:%02x:%02x:%02x:%02x:%02x",
                  rarp->arp_sha[0], rarp->arp_sha[1], rarp->arp_sha[2],
                  rarp->arp_sha[3], rarp->arp_sha[4], rarp->arp_sha[5]);
-        if(strlen(resume) < 240){
-            strcat(resume, " ");
-            strcat(resume, sip);
-            strcat(resume, " is-at ");
-            strcat(resume, smac);
+        if(can_append(resume, " ", RESUME_BUFFER_SIZE)){
+            safe_strcat(resume, " ", RESUME_BUFFER_SIZE);
+            safe_strcat(resume, sip, RESUME_BUFFER_SIZE);
+            safe_strcat(resume, " is-at ", RESUME_BUFFER_SIZE);
+            safe_strcat(resume, smac, RESUME_BUFFER_SIZE);
         }
         return 1;
     }

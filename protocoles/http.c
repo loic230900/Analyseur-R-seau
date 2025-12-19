@@ -1,56 +1,74 @@
+/**
+ * @file http.c
+ * @brief Analyseur de messages HTTP (couche 7 - Application)
+ * 
+ * Ce module implémente le parsing des échanges HTTP/1.x conformément
+ * aux RFCs 7230-7235. Supporte les requêtes et réponses HTTP.
+ * 
+ * Port TCP : 80 (HTTP), 443 (HTTPS non analysé - chiffré)
+ * 
+ * @author Projet Services Réseaux M1 SIRIS
+ * @date 2024-2025
+ */
+
 #include "http.h"
 #include "../util/textutils.h"
 #include "../hexdump.h"
+#include "../util/safe_string.h"
+#include "../util/display_constants.h"
 #include <stdio.h>
 #include <string.h>
-#include <ctype.h>
 #include <stdlib.h>
-
+#include <ctype.h>
 
 /**
-* Verifie si une ligne commence par une methode http
-* Format : caractères alphabétiques en majuscules, suivis d'un espace et d'une URI
-* @param line: pointeur vers le debut de la ligne
-* @param len: longueur de la ligne
-* @return 1 si c'est une requete http, 0 sinon
-*/
+ * Vérifie si une ligne est une requête HTTP
+ * 
+ * Détecte les lignes commençant par une méthode HTTP valide
+ * (caractères alphabétiques majuscules) suivie d'une URI.
+ * 
+ * @param line Pointeur vers le début de la ligne
+ * @param len  Longueur de la ligne
+ * 
+ * @return 1 si c'est une requête HTTP, 0 sinon
+ */
 static int is_http_request(const char *line, int len){
-    if(len < 8) // minimum "GET / ..."
+    if(len < 8)  /* Minimum "GET / ..." */
         return 0;
     
-    // Vérifier que le premier caractère est alphabétique et en majuscule
+    /* Le premier caractère doit être alphabétique et majuscule */
     if (!isupper((unsigned char)line[0]))
         return 0;
     
-    // Compter les caractères alphabétiques consécutifs (méthodes HTTP)
+    /* Compter les caractères alphabétiques (longueur de la méthode) */
     int method_len = 0;
     while (method_len < len && method_len < 20 && isalpha((unsigned char)line[method_len])) {
         method_len++;
     }
     
-    // Une méthode doit avoir au moins 3 caractères (GET, PUT, etc.)
+    /* Une méthode doit avoir 3-20 caractères (GET, OPTIONS, etc.) */
     if (method_len < 3 || method_len > 20)
         return 0;
     
-    // Vérifier que tous les caractères sont en majuscules
+    /* Vérifier que tous les caractères sont majuscules */
     for (int i = 0; i < method_len; i++) {
         if (!isupper((unsigned char)line[i])) {
             return 0;
         }
     }
     
-    // Après la méthode, il doit y avoir un espace suivi d'une URI (commence par /)
+    /* Après la méthode : un espace suivi de l'URI */
     if (method_len < len) {
         if (line[method_len] != ' ')
             return 0;
         
-        // Chercher le début de l'URI (après l'espace)
+        /* Chercher le début de l'URI */
         int uri_start = method_len + 1;
         while (uri_start < len && line[uri_start] == ' ') {
             uri_start++;
         }
         
-        // L'URI doit commencer par / ou être un chemin valide
+        /* L'URI doit commencer par / ou être un caractère imprimable */
         if (uri_start < len && (line[uri_start] == '/' || isprint((unsigned char)line[uri_start]))) {
             return 1;
         }
@@ -60,22 +78,30 @@ static int is_http_request(const char *line, int len){
 }
 
 /**
- * Verifie si une ligne commence par une reponse http
- * @param line: pointeur vers le debut de la ligne
- * @param len: longueur de la ligne
- * @return 1 si c'est une reponse http, -1 sinon
-*/
+Vérifie si une ligne est une réponse HTTP
+ * 
+ * Détecte les lignes commençant par "HTTP/1.x"
+ * 
+ * @param line Pointeur vers le début de la ligne
+ * @param len  Longueur de la ligne
+ * 
+ * @return 1 si c'est une réponse HTTP, -1 sinon
+ */
 static int is_http_response(const char *line, int len){
-    if (len < 12) // minimum "HTTP/1.x ..."
+    if (len < 12)  /* Minimum "HTTP/1.x ..." */
         return -1;
     return (strncmp(line, "HTTP/1.", 7) == 0);
 }
 
 /**
- * Trouve une fin naturelle d'un message textuel (JSON, XML, etc.) pour éviter de couper
- * @param data: pointeur vers les données
- * @param total_len: longueur totale disponible
- * @param max_display: limite maximale souhaitée
+Trouve une fin naturelle pour l'affichage de contenu
+ * 
+ * Cherche un point de coupure logique (fin de structure JSON/XML,
+ * fin de ligne) pour éviter de tronquer au milieu d'un mot.
+ * 
+ * @param data        Pointeur vers les données
+ * @param total_len   Longueur totale disponible
+ * @param max_display Limite maximale souhaitée
  * @return longueur à afficher (peut être > max_display si message complet est proche)
  */
 static int find_natural_end(const u_char *data, int total_len, int max_display) {
@@ -85,9 +111,9 @@ static int find_natural_end(const u_char *data, int total_len, int max_display) 
     }
     
     // Chercher une fin naturelle proche de la limite
-    int search_start = max_display - 200; // Chercher dans les 200 derniers bytes avant la limite
+    int search_start = max_display - NATURAL_END_SEARCH_BACK;
     if(search_start < 0) search_start = 0;
-    int search_end = (total_len < max_display + 500) ? total_len : max_display + 500;
+    int search_end = (total_len < max_display + NATURAL_END_SEARCH_FORWARD) ? total_len : max_display + NATURAL_END_SEARCH_FORWARD;
     
     // Détecter le type de contenu
     int is_json = (data[0] == '{' || data[0] == '[');
@@ -204,13 +230,13 @@ static int parse_http_request(const u_char *packet, int length, int verbosity, i
             // Extraire Host header
             if(strcasecmp(line, "Host") == 0) {
                 // Enlever \r\n à la fin
-                int host_len = strlen(value);
+                size_t host_len = strlen(value);
                 while(host_len > 0 && (value[host_len-1] == '\r' || value[host_len-1] == '\n')) {
                     value[host_len-1] = '\0';
                     host_len--;
                 }
                 if(host_len > 0 && host_len < 255) {
-                    strncpy(host_header, value, host_len);
+                    strncpy(host_header, value, (size_t)host_len);
                     host_header[host_len] = '\0';
                 }
             }
@@ -221,7 +247,7 @@ static int parse_http_request(const u_char *packet, int length, int verbosity, i
 
     //verbosite 2
     if(verbosity == 2){
-        for(int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         if(strlen(host_header) > 0) {
             printf("HTTP Request: %s %s %s [Host: %s]\n", method, uri, version, host_header);
         } else {
@@ -229,23 +255,23 @@ static int parse_http_request(const u_char *packet, int length, int verbosity, i
         }
     }
     else if (verbosity == 3){ // verbosite 3
-        for(int  i=0; i < indent; i++ ) printf(" ");
-        printf("HTTP Request:\n");
+        print_indent(indent);
+        printf("[L7] HTTP Request:\n");
 
-        for(int i = 0; i < indent +2; i++) printf(" ");
-        printf("Method:  %s\n",method);
+        print_indent(indent);
+        printf("      Method:  %s\n",method);
 
-        for(int i = 0; i < indent + 2; i++) printf(" ");
-        printf("URI:     %s\n", uri);
+        print_indent(indent);
+        printf("      URI:     %s\n", uri);
 
-        for(int i = 0; i < indent + 2; i++) printf(" ");
-        printf("Version: %s\n", version);
+        print_indent(indent);
+        printf("      Version: %s\n", version);
     }
 
     //parsing des headers (réafficher pour verbosité 3)
     if(verbosity == 3){
-        for(int i = 0; i < indent; i++) printf(" ");
-        printf("Headers:\n");
+        print_indent(indent);
+        printf("      Headers:\n");
     }
 
     // Réparcourir les headers pour l'affichage détaillé en v3
@@ -269,7 +295,7 @@ static int parse_http_request(const u_char *packet, int length, int verbosity, i
                 value ++;
 
             if(verbosity == 3){
-                for(int i = 0; i < indent + 2;i++)printf(" ");
+                print_indent(indent + 2);
                 printf("%s %s\n", line, value);
             }
         }
@@ -284,7 +310,7 @@ static int parse_http_request(const u_char *packet, int length, int verbosity, i
     int body_len = length - offset;
 
     if(body_len > 0 && verbosity == 3){
-        for(int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("Body: %d bytes\n", body_len);
 
         // Vérifier si le body est du texte imprimable
@@ -302,22 +328,22 @@ static int parse_http_request(const u_char *packet, int length, int verbosity, i
         
         if(is_text){
             // Afficher le texte directement
-            for(int i = 0; i < indent; i++) printf(" ");
+            print_indent(indent);
             printf("Content (text):\n");
-            for(int i = 0; i < indent; i++) printf(" ");
+            print_indent(indent);
             printf("---\n");
-            fwrite(packet + offset, 1, display_len, stdout);
+            fwrite(packet + offset, 1, (size_t)display_len, stdout);
             if(body_len > display_len) {
                 printf("\n... (truncated, %d bytes total, showing first %d bytes)", body_len, display_len);
             }
             printf("\n");
-            for(int i = 0; i < indent; i++) printf(" ");
+            print_indent(indent);
             printf("---\n");
         } else {
             // Afficher en hexdump pour données binaires (limité aussi)
             print_hexdump(packet + offset, display_len);
             if(body_len > display_len) {
-                for(int i = 0; i < indent; i++) printf(" ");
+                print_indent(indent);
                 printf("... (truncated, %d bytes total, showing first %d bytes)\n", body_len, display_len);
             }
         }
@@ -350,40 +376,40 @@ static int parse_http_response(const u_char *packet, int length, int verbosity, 
     char *space1 = strchr(line, ' ');
     if(space1){
         *space1 = '\0';
-        strncpy(version, line, sizeof(version) - 1);
+        snprintf(version, sizeof(version), "%.*s", (int)sizeof(version) - 1, line);
 
         char *space2 = strchr(space1 + 1, ' ');
         if(space2) {
             *space2 = '\0';
             status_code = atoi(space1 + 1);
-            strncpy(status_phrase, space2 +1, sizeof(status_phrase) - 1);
+            snprintf(status_phrase, sizeof(status_phrase), "%.*s", (int)sizeof(status_phrase) - 1, space2 + 1);
         }
         else {
             status_code = atoi(space1 + 1);
         }
     }
     if (verbosity == 2) { //verbosite 2 
-        for(int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("HTTP Response: %s %d %s\n", version, status_code, status_phrase);
     }
     else if(verbosity == 3) { //vebosite 3
-        for(int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("HTTP Response:\n");
         
-        for(int i = 0; i < indent+2; i++) printf(" ");
+        print_indent(indent + 2);
         printf("Version:     %s\n", version);
         
-        for(int i = 0; i < indent+2; i++) printf(" ");
+        print_indent(indent + 2);
         printf("Status Code: %d\n", status_code);
         
-        for(int i = 0; i < indent+2; i++) printf(" ");
+        print_indent(indent + 2);
         printf("Status:      %s\n", status_phrase);
     }
     offset = next;
 
     //parse headers
     if(verbosity == 3) {
-        for(int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("Headers:\n");
     }
     
@@ -410,7 +436,7 @@ static int parse_http_response(const u_char *packet, int length, int verbosity, 
             }
             
             if(verbosity == 3) {
-                for(int i = 0; i < indent+2; i++) printf(" ");
+                print_indent(indent + 2);
                 printf("%s: %s\n", line, value);
             }
         }
@@ -421,7 +447,7 @@ static int parse_http_response(const u_char *packet, int length, int verbosity, 
     // Body
     int body_len = (content_length >= 0) ? content_length : (length - offset);
     if(body_len > 0 && verbosity == 3) {
-        for(int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("Body: %d bytes\n", body_len);
         
         if(offset < length) {
@@ -442,22 +468,22 @@ static int parse_http_response(const u_char *packet, int length, int verbosity, 
                 
                 if(is_text){
                     // Afficher le texte directement
-                    for(int i = 0; i < indent; i++) printf(" ");
+                    print_indent(indent);
                     printf("Content (text):\n");
-                    for(int i = 0; i < indent; i++) printf(" ");
+                    print_indent(indent);
                     printf("---\n");
-                    fwrite(packet + offset, 1, display_len, stdout);
+                    fwrite(packet + offset, 1, (size_t)display_len, stdout);
                     if(actual_body_len > display_len) {
                         printf("\n... (truncated, %d bytes total, showing first %d bytes)", actual_body_len, display_len);
                     }
                     printf("\n");
-                    for(int i = 0; i < indent; i++) printf(" ");
+                    print_indent(indent);
                     printf("---\n");
                 } else {
                     // Afficher en hexdump pour données binaires (limité aussi)
                     print_hexdump(packet + offset, display_len);
                     if(actual_body_len > display_len) {
-                        for(int i = 0; i < indent; i++) printf(" ");
+                        print_indent(indent);
                         printf("... (truncated, %d bytes total, showing first %d bytes)\n", actual_body_len, display_len);
                     }
                 }
@@ -475,7 +501,7 @@ int parse_http(const u_char *packet, int length, int verbosity, int indent) {
     //convertir  debut en string pour analyse
     char header_start[512];
     int preview_len = (length < 511) ? length : 511;
-    memcpy(header_start, packet, preview_len);
+    memcpy(header_start, packet, (size_t)preview_len);
     header_start[preview_len] = '\0';
 
     //detection request ou response
@@ -489,12 +515,12 @@ int parse_http(const u_char *packet, int length, int verbosity, int indent) {
     // Ni requête ni réponse → probablement du body fragmenté
     // Détecter si c'est du JSON/text pour l'afficher intelligemment
     if(verbosity == 2 && length > 0) {
-        for(int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("HTTP Body (fragmented): %d bytes\n", length);
         return length;
     }
     else if(verbosity == 3 && length > 0) {
-        for(int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("HTTP Body (fragmented): %d bytes\n", length);
         
         // Vérifier si c'est du texte/JSON (commence souvent par { ou [)
@@ -513,22 +539,22 @@ int parse_http(const u_char *packet, int length, int verbosity, int indent) {
         
         if(is_text && (packet[0] == '{' || packet[0] == '[' || packet[0] == '<')) {
             // Probablement JSON/XML/text
-            for(int i = 0; i < indent; i++) printf(" ");
+            print_indent(indent);
             printf("Content (text):\n");
-            for(int i = 0; i < indent; i++) printf(" ");
+            print_indent(indent);
             printf("---\n");
-            fwrite(packet, 1, display_len, stdout);
+            fwrite(packet, 1, (size_t)display_len, stdout);
             if(length > display_len) {
                 printf("\n... (truncated, %d bytes total, showing first %d bytes)", length, display_len);
             }
             printf("\n");
-            for(int i = 0; i < indent; i++) printf(" ");
+            print_indent(indent);
             printf("---\n");
         } else {
             // Afficher en hexdump
             print_hexdump(packet, display_len);
             if(length > display_len) {
-                for(int i = 0; i < indent; i++) printf(" ");
+                print_indent(indent);
                 printf("... (truncated, %d bytes total, showing first %d bytes)\n", length, display_len);
             }
         }
@@ -553,15 +579,13 @@ int http_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
         if(http_len > 0) {
             char data_info[64];
             snprintf(data_info, sizeof(data_info), " | HTTP [DATA %d bytes]", http_len);
-            if(strlen(resume) + strlen(data_info) < 255) {
-                strcat(resume, data_info);
-            }
+            safe_strcat(resume, data_info, RESUME_BUFFER_SIZE);
             return 1;
         }
         return 0;
     }
 
-    memcpy(line, http, end);
+    memcpy(line, http, (size_t)end);
     line[end] = '\0';
 
     //request 
@@ -581,7 +605,7 @@ int http_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
             if(line_len > 127) line_len = 127;
             
             char header[128];
-            memcpy(header, http + offset + 2, line_len);
+            memcpy(header, http + offset + 2, (size_t)line_len);
             header[line_len] = '\0';
             
             // Host header
@@ -589,13 +613,13 @@ int http_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
                 char *value = header + 5;
                 while(*value == ' ') value++;
                 // Enlever \r\n à la fin
-                int host_len = strlen(value);
+                size_t host_len = strlen(value);
                 while(host_len > 0 && (value[host_len-1] == '\r' || value[host_len-1] == '\n')) {
                     value[host_len-1] = '\0';
                     host_len--;
                 }
                 if(host_len > 0 && host_len < 127) {
-                    strncpy(host, value, host_len);
+                    strncpy(host, value, (size_t)host_len);
                     host[host_len] = '\0';
                 }
                 break; // Host trouvé, on peut arrêter
@@ -607,24 +631,12 @@ int http_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
         if(strlen(host) > 0) {
             char http_str[256];
             snprintf(http_str, sizeof(http_str), " | HTTP %s %s [Host: %s]", method, uri, host);
-            if(strlen(resume) + strlen(http_str) < 255) {
-                strcat(resume, http_str);
-            } else {
-                // Fallback sans Host si trop long
-                if(strlen(resume) + strlen(method) + strlen(uri) + 10 < 255) {
-                    strcat(resume, " | HTTP ");
-                    strcat(resume, method);
-                    strcat(resume, " ");
-                    strcat(resume, uri);
-                }
-            }
+            safe_strcat(resume, http_str, RESUME_BUFFER_SIZE);
         } else {
             // Pas de Host header trouvé
-        if(strlen(resume) + strlen(method) + strlen(uri) + 10 < 255) {
-            strcat(resume, " | HTTP ");
-            strcat(resume, method);
-            strcat(resume, " ");
-            strcat(resume, uri);
+            if(can_append(resume, " | HTTP ", RESUME_BUFFER_SIZE)) {
+                size_t len = strlen(resume);
+                snprintf(resume + len, RESUME_BUFFER_SIZE - len, " | HTTP %s %s", method, uri);
             }
         }
         return 1;
@@ -654,7 +666,7 @@ int http_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
                 if(line_len > 100) line_len = 100;
                 
                 char header[128];
-                memcpy(header, http + offset + 2, line_len);
+                memcpy(header, http + offset + 2, (size_t)line_len);
                 header[line_len] = '\0';
                 
                 // Content-Type
@@ -671,23 +683,26 @@ int http_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
                     type[i] = '\0';
                     
                     // Simplifier les types courants
+                    const char *type_marker = "";
                     if(strstr(type, "json")) {
-                        strcat(code_str, " [JSON]");
+                        type_marker = " [JSON]";
                     } else if(strstr(type, "html")) {
-                        strcat(code_str, " [HTML]");
+                        type_marker = " [HTML]";
                     } else if(strstr(type, "text")) {
-                        strcat(code_str, " [TEXT]");
+                        type_marker = " [TEXT]";
                     } else if(strstr(type, "image")) {
-                        strcat(code_str, " [IMG]");
+                        type_marker = " [IMG]";
+                    }
+                    if(type_marker[0]) {
+                        size_t code_len = strlen(code_str);
+                        snprintf(code_str + code_len, sizeof(code_str) - code_len, "%s", type_marker);
                     }
                     break; // trouvé
                 }
                 offset = next_end;
             }
             
-            if(strlen(resume) + strlen(code_str) < 255) {
-                strcat(resume, code_str);
-            }
+            safe_strcat(resume, code_str, RESUME_BUFFER_SIZE);
             return 1;
         }
     }
@@ -696,9 +711,7 @@ int http_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
     if(http_len > 0) {
         char data_info[64];
         snprintf(data_info, sizeof(data_info), " | HTTP [DATA %d bytes]", http_len);
-        if(strlen(resume) + strlen(data_info) < 255) {
-            strcat(resume, data_info);
-        }
+        safe_strcat(resume, data_info, RESUME_BUFFER_SIZE);
         return 1;
     }
     

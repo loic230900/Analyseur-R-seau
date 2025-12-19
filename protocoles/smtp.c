@@ -1,48 +1,52 @@
+/**
+ * @file smtp.c
+ * @brief Analyseur de messages SMTP (couche 7 - Application)
+ */
+
 #include "smtp.h"
-#include "../util/textutils.h"
-#include "../hexdump.h"
 #include <stdio.h>
 #include <string.h>
+#include <stddef.h>
 #include <ctype.h>
-#include <stdlib.h>
-
-/* Helpers de parsing de lignes déplacés dans textutils.c */
+#include "../util/textutils.h"
+#include "../util/safe_string.h"
 
 /**
  * Vérifie si une ligne est une commande SMTP
- * @param line: pointeur vers la ligne
- * @param len: longueur de la ligne
+ * 
+ * Détecte les lignes commençant par une commande SMTP valide
+ * (4+ caractères alphabétiques majuscules).
+ * 
+ * @param line Pointeur vers la ligne
+ * @param len  Longueur de la ligne
+ * 
  * @return 1 si c'est une commande SMTP, 0 sinon
  */
 static int is_smtp_command(const char *line, int len) {
     if (len < 4) return 0;
     
-    // Vérifier que le premier caractère est alphabétique
+    /* Le premier caractère doit être alphabétique */
     if (!isalpha((unsigned char)line[0]))
         return 0;
     
-    // Compter les caractères alphabétiques consécutifs
-    // Les commandes SMTP standard font 4 caractères, mais certaines extensions peuvent être plus longues
+    /* Compter les caractères alphabétiques (longueur de la commande) */
     int cmd_len = 0;
     while (cmd_len < len && cmd_len < 20 && isalpha((unsigned char)line[cmd_len])) {
         cmd_len++;
     }
     
-    // Une commande SMTP doit avoir au moins 4 caractères (HELO, MAIL, etc.)
+    /* Une commande SMTP fait au moins 4 caractères (HELO, MAIL, etc.) */
     if (cmd_len < 4 || cmd_len > 20)
         return 0;
     
-    // Vérifier que tous les caractères sont en majuscules
+    /* Vérifier que tous les caractères sont majuscules */
     for (int i = 0; i < cmd_len; i++) {
         if (!isupper((unsigned char)line[i])) {
             return 0;
         }
     }
     
-    // Après la commande, il doit y avoir :
-    // - Fin de ligne (CRLF ou LF)
-    // - Un espace (suivi d'arguments)
-    // - Un ':' (pour certaines commandes comme MAIL FROM:)
+    /* Après la commande : espace, CRLF, ':', ou tabulation */
     if (cmd_len < len) {
         unsigned char next = (unsigned char)line[cmd_len];
         if (next != ' ' && next != '\r' && next != '\n' && next != ':' && next != '\t') {
@@ -54,7 +58,9 @@ static int is_smtp_command(const char *line, int len) {
 }
 
 /**
- * Vérifie si une ligne est une réponse SMTP (commence par 3 chiffres)
+Vérifie si une ligne est une réponse SMTP
+ * 
+ * Détecte les lignes commençant par un code à 3 chiffres
  * @param line: pointeur vers la ligne
  * @param len: longueur de la ligne
  * @return le code de réponse si valide, -1 sinon
@@ -91,22 +97,23 @@ static int parse_smtp_command(const u_char *packet, int length, int verbosity, i
 
     // Verbosité 2 : affichage concis
     if (verbosity == 2) {
-        for (int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("SMTP Command: %s\n", line);
     }
     // Verbosité 3 : affichage détaillé
     else if (verbosity == 3) {
-        for (int i = 0; i < indent; i++) printf(" ");
-        printf("SMTP Command:\n");
+        print_indent(indent);
+        printf("[L7] SMTP Command:\n");
         
         // Extraire la commande et les arguments
         char cmd[16] = "";
         char args[256] = "";
         char *space = strchr(line, ' ');
         if (space) {
-            int cmd_len = space - line;
-            if (cmd_len < 16) {
-                strncpy(cmd, line, cmd_len);
+            ptrdiff_t diff = space - line;
+            int cmd_len = (diff > 0 && diff < (ptrdiff_t)sizeof(cmd)) ? (int)diff : 0;
+            if (cmd_len > 0) {
+                strncpy(cmd, line, (size_t)cmd_len);
                 cmd[cmd_len] = '\0';
             }
             // Arguments après l'espace
@@ -114,14 +121,20 @@ static int parse_smtp_command(const u_char *packet, int length, int verbosity, i
             while (*arg_start == ' ') arg_start++;
             strncpy(args, arg_start, sizeof(args) - 1);
         } else {
-            strncpy(cmd, line, sizeof(cmd) - 1);
+            int max_cmd_len = (int)sizeof(cmd) - 1;
+            int line_len = (int)strlen(line);
+            int copy_len = (line_len < max_cmd_len) ? line_len : max_cmd_len;
+            if (copy_len > 0) {
+                memcpy(cmd, line, (size_t)copy_len);
+            }
+            cmd[copy_len] = '\0';
         }
         
-        for (int i = 0; i < indent + 2; i++) printf(" ");
+        print_indent(indent + 2);
         printf("Command: %s\n", cmd);
         
         if (strlen(args) > 0) {
-            for (int i = 0; i < indent + 2; i++) printf(" ");
+            print_indent(indent + 2);
             printf("Arguments: %s\n", args);
         }
     }
@@ -133,7 +146,7 @@ static int parse_smtp_command(const u_char *packet, int length, int verbosity, i
         // On ne parse pas le contenu ici, juste indiquer qu'il y a du data
         int remaining = length - offset;
         if (remaining > 0) {
-            for (int i = 0; i < indent; i++) printf(" ");
+            print_indent(indent);
             printf("Mail Content: %d bytes (not parsed)\n", remaining);
             offset = length; // Consommer tout
         }
@@ -168,24 +181,30 @@ static int parse_smtp_response(const u_char *packet, int length, int verbosity, 
         
         // Le message commence après le code et un espace/tiret
         if (strlen(line) > 4 && (line[3] == ' ' || line[3] == '-')) {
-            strncpy(message, line + 4, sizeof(message) - 1);
+            int max_msg_len = (int)sizeof(message) - 1;
+            int msg_src_len = (int)(strlen(line + 4));
+            int copy_len = (msg_src_len < max_msg_len) ? msg_src_len : max_msg_len;
+            if (copy_len > 0) {
+                memcpy(message, line + 4, (size_t)copy_len);
+            }
+            message[copy_len] = '\0';
         }
     }
 
     // Verbosité 2
     if (verbosity == 2) {
-        for (int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("SMTP Response: %d %s\n", code, message);
     }
     // Verbosité 3
     else if (verbosity == 3) {
-        for (int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("SMTP Response:\n");
         
-        for (int i = 0; i < indent + 2; i++) printf(" ");
+        print_indent(indent + 2);
         printf("Code: %d\n", code);
         
-        for (int i = 0; i < indent + 2; i++) printf(" ");
+        print_indent(indent + 2);
         printf("Message: %s\n", message);
     }
     
@@ -202,7 +221,7 @@ static int parse_smtp_response(const u_char *packet, int length, int verbosity, 
             if (line_code == code && strlen(line) > 3 && line[3] == '-') {
                 // Ligne de continuation
                 if (verbosity == 3) {
-                    for (int i = 0; i < indent + 2; i++) printf(" ");
+                    print_indent(indent + 2);
                     printf("  %s\n", line + 4);
                 }
                 offset = next;
@@ -210,7 +229,7 @@ static int parse_smtp_response(const u_char *packet, int length, int verbosity, 
             } else if (line_code == code && strlen(line) > 3 && line[3] == ' ') {
                 // Dernière ligne de la réponse multi-ligne
                 if (verbosity == 3) {
-                    for (int i = 0; i < indent + 2; i++) printf(" ");
+                    print_indent(indent + 2);
                     printf("  %s\n", line + 4);
                 }
                 offset = next;
@@ -233,7 +252,7 @@ int parse_smtp(const u_char *packet, int length, int verbosity, int indent) {
     // Convertir le début en string pour analyse
     char header_start[512];
     int preview_len = (length < 511) ? length : 511;
-    memcpy(header_start, packet, preview_len);
+    memcpy(header_start, packet, (size_t)preview_len);
     header_start[preview_len] = '\0';
 
     // Détection commande ou réponse
@@ -257,15 +276,15 @@ int parse_smtp(const u_char *packet, int length, int verbosity, int indent) {
         }
         
         if (is_text) {
-            for (int i = 0; i < indent; i++) printf(" ");
+            print_indent(indent);
             printf("SMTP Mail Data: %d bytes\n", length);
             
-            for (int i = 0; i < indent; i++) printf(" ");
+            print_indent(indent);
             printf("---\n");
-            fwrite(packet, 1, length > 500 ? 500 : length, stdout);
+            fwrite(packet, 1, (size_t)(length > 500 ? 500 : length), stdout);
             if (length > 500) printf("\n... (truncated)");
             printf("\n");
-            for (int i = 0; i < indent; i++) printf(" ");
+            print_indent(indent);
             printf("---\n");
             return length;
         }
@@ -273,7 +292,7 @@ int parse_smtp(const u_char *packet, int length, int verbosity, int indent) {
     
     // Sinon, affichage générique pour verbosité 2
     if (verbosity == 2 && length > 0) {
-        for (int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("SMTP Data: %d bytes\n", length);
         return length;
     }
@@ -296,7 +315,7 @@ int smtp_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
     if (end < 0 || end > 127)
         return 0;
 
-    memcpy(line, smtp, end);
+    memcpy(line, smtp, (size_t)end);
     line[end] = '\0';
 
     // Commande SMTP
@@ -312,9 +331,7 @@ int smtp_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
             snprintf(info, sizeof(info), " | SMTP %s", cmd);
         }
         
-        if (strlen(resume) + strlen(info) < 255) {
-            strcat(resume, info);
-        }
+        safe_strcat(resume, info, RESUME_BUFFER_SIZE);
         return 1;
     }
     // Réponse SMTP
@@ -325,7 +342,7 @@ int smtp_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
             if (end > 4 && (line[3] == ' ' || line[3] == '-')) {
                 int msg_len = end - 4;
                 if (msg_len > 63) msg_len = 63;
-                memcpy(msg, line + 4, msg_len);
+                memcpy(msg, line + 4, (size_t)msg_len);
                 msg[msg_len] = '\0';
             }
             
@@ -336,9 +353,7 @@ int smtp_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, ch
                 snprintf(info, sizeof(info), " | SMTP %d", code);
             }
             
-            if (strlen(resume) + strlen(info) < 255) {
-                strcat(resume, info);
-            }
+            safe_strcat(resume, info, RESUME_BUFFER_SIZE);
             return 1;
         }
     }

@@ -1,6 +1,35 @@
+/**
+
+Analyseur de messages FTP (couche 7 - Application)
+ * 
+ * Ce module implémente le parsing des échanges FTP conformément à la RFC 959.
+ * FTP (File Transfer Protocol) permet le transfert de fichiers entre systèmes.
+ * 
+ * Caractéristiques :
+ * - Protocole textuel basé sur des lignes (CRLF)
+ * - Deux connexions séparées : contrôle (port 21) et données (port 20)
+ * - Mode actif : serveur se connecte au client
+ * - Mode passif : client se connecte au serveur (PASV/EPSV)
+ * 
+ * Commandes FTP principales :
+ * - USER/PASS : Authentification
+ * - PWD/CWD : Navigation répertoires
+ * - LIST/NLST : Listage de répertoire
+ * - RETR/STOR : Téléchargement/Upload
+ * - PASV/EPSV : Mode passif
+ * - TYPE : Mode transfert (A=ASCII, I=Binaire)
+ * - QUIT : Déconnexion
+ * 
+ * Codes de réponse : 1xx (info), 2xx (succès), 3xx (intermédiaire),
+ *                    4xx (erreur temporaire), 5xx (erreur permanente)
+ * 
+ */
+
 #include "ftp.h"
 #include "../util/textutils.h"
 #include "../hexdump.h"
+#include "../util/safe_string.h"
+#include "../util/display_constants.h"
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
@@ -101,32 +130,38 @@ static int parse_ftp_command(const u_char *packet, int length, int verbosity, in
     mask_ftp_password(line);
     
     if (verbosity == 2) {
-        for (int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("FTP Command: %s\n", line);
     } else if (verbosity == 3) {
-        for (int i = 0; i < indent; i++) printf(" ");
-        printf("FTP Command:\n");
+        print_indent(indent);
+        printf("[L7] FTP Command:\n");
         
         char cmd[16] = "";
         char args[256] = "";
         char *space = strchr(line, ' ');
         if (space) {
-            int cmd_len = space - line;
+            int cmd_len = (int)(space - line);
             if (cmd_len < 16) {
-                strncpy(cmd, line, cmd_len);
+                strncpy(cmd, line, (size_t)cmd_len);
                 cmd[cmd_len] = '\0';
             }
             char *arg_start = space + 1;
             while (*arg_start == ' ') arg_start++;
             strncpy(args, arg_start, sizeof(args) - 1);
         } else {
-            strncpy(cmd, line, sizeof(cmd) - 1);
+            int max_cmd_len = (int)sizeof(cmd) - 1;
+            int line_len = (int)strlen(line);
+            int copy_len = (line_len < max_cmd_len) ? line_len : max_cmd_len;
+            if (copy_len > 0) {
+                memcpy(cmd, line, (size_t)copy_len);
+            }
+            cmd[copy_len] = '\0';
         }
         
-        for (int i = 0; i < indent+2; i++) printf(" ");
+        print_indent(indent + 2);
         printf("Command: %s\n", cmd);
         if (strlen(args) > 0) {
-            for (int i = 0; i < indent+2; i++) printf(" ");
+            print_indent(indent + 2);
             printf("Arguments: %s\n", args);
         }
     }
@@ -151,7 +186,7 @@ static int parse_ftp_response(const u_char *packet, int length, int verbosity, i
         if (next < 0) break;
         
         // Vérifier si c'est une ligne de réponse FTP (commence par 3 chiffres)
-        int code = is_ftp_response(line, strlen(line));
+        int code = is_ftp_response(line, (int)strlen(line));
         
         // Si c'est une ligne de réponse FTP
         if (code >= 0) {
@@ -179,20 +214,20 @@ static int parse_ftp_response(const u_char *packet, int length, int verbosity, i
             }
             
             if (verbosity == 2) {
-                for (int i = 0; i < indent; i++) printf(" ");
+                print_indent(indent);
                 printf("FTP Response: %d %s\n", code, msg_start);
             } else if (verbosity == 3) {
                 if (total_consumed == 0) {
                     // Première ligne
-                    for (int i = 0; i < indent; i++) printf(" ");
+                    print_indent(indent);
                     printf("FTP Response:\n");
-                    for (int i = 0; i < indent+2; i++) printf(" ");
+                    print_indent(indent + 2);
                     printf("Code: %d\n", code);
-                    for (int i = 0; i < indent+2; i++) printf(" ");
+                    print_indent(indent + 2);
                     printf("Message: %s\n", msg_start);
                 } else {
                     // Ligne finale de la réponse multi-lignes
-                    for (int i = 0; i < indent+2; i++) printf(" ");
+                    print_indent(indent + 2);
                     printf("  %s\n", msg_start);
                 }
             }
@@ -220,10 +255,10 @@ static int parse_ftp_response(const u_char *packet, int length, int verbosity, i
             while (*content == ' ') content++; // Enlever les espaces supplémentaires
             
             if (verbosity == 2) {
-                for (int i = 0; i < indent; i++) printf(" ");
+                print_indent(indent);
                 printf("FTP Response (continuation): %s\n", content);
             } else if (verbosity == 3) {
-                for (int i = 0; i < indent+2; i++) printf(" ");
+                print_indent(indent + 2);
                 printf("  %s (continuation)\n", content);
             }
             
@@ -236,7 +271,7 @@ static int parse_ftp_response(const u_char *packet, int length, int verbosity, i
                 char peek_line[512];
                 int peek_next = text_extract_line(packet, offset, length - offset, peek_line, sizeof(peek_line));
                 if (peek_next > 0) {
-                    int next_code = is_ftp_response(peek_line, strlen(peek_line));
+                    int next_code = is_ftp_response(peek_line, (int)strlen(peek_line));
                     if (next_code == first_code) {
                         // Ligne finale trouvée, on va la traiter au prochain tour
                         continue;
@@ -288,7 +323,7 @@ static int parse_ftp_continuation(const u_char *packet, int length, int verbosit
     if (next < 0) return 0;
     
     // Vérifier que c'est bien une ligne de continuation
-    if (!is_ftp_continuation_line(line, strlen(line))) {
+    if (!is_ftp_continuation_line(line, (int)strlen(line))) {
         return 0;
     }
     
@@ -297,12 +332,12 @@ static int parse_ftp_continuation(const u_char *packet, int length, int verbosit
     while (*content == ' ') content++; // Enlever les espaces supplémentaires
     
     if (verbosity == 2) {
-        for (int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("FTP Response (continuation): %s\n", content);
     } else if (verbosity == 3) {
-        for (int i = 0; i < indent; i++) printf(" ");
+        print_indent(indent);
         printf("FTP Response:\n");
-        for (int i = 0; i < indent+2; i++) printf(" ");
+        print_indent(indent + 2);
         printf("  %s (continuation)\n", content);
     }
     
@@ -322,11 +357,11 @@ int parse_ftp(const u_char *packet, int length, int verbosity, int indent) {
     int next = text_extract_line(packet, offset, length, line, sizeof(line));
     if (next < 0) return 0;
     
-    if (is_ftp_command(line, strlen(line))) {
+    if (is_ftp_command(line, (int)strlen(line))) {
         return parse_ftp_command(packet, length, verbosity, indent);
-    } else if (is_ftp_response(line, strlen(line)) >= 0) {
+    } else if (is_ftp_response(line, (int)strlen(line)) >= 0) {
         return parse_ftp_response(packet, length, verbosity, indent);
-    } else if (is_ftp_continuation_line(line, strlen(line))) {
+    } else if (is_ftp_continuation_line(line, (int)strlen(line))) {
         // Ligne de continuation (commence par un espace, comme les features dans FEAT)
         return parse_ftp_continuation(packet, length, verbosity, indent);
     }
@@ -350,40 +385,44 @@ int ftp_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, cha
     // Masquer le mot de passe
     mask_ftp_password(line);
     
-    if (is_ftp_command(line, strlen(line))) {
+    if (is_ftp_command(line, (int)strlen(line))) {
         // Extraire juste la commande (sans arguments)
         char cmd[16] = "";
         sscanf(line, "%15s", cmd);
-        if (strlen(resume) + strlen(cmd) + 12 < 255) {
-            strcat(resume, " | FTP CMD: ");
-            strcat(resume, cmd);
+        if (can_append(resume, " | FTP CMD: ", RESUME_BUFFER_SIZE)) {
+            safe_strcat(resume, " | FTP CMD: ", RESUME_BUFFER_SIZE);
+            safe_strcat(resume, cmd, RESUME_BUFFER_SIZE);
         }
         return 1;
     } else {
-        int code = is_ftp_response(line, strlen(line));
+        int code = is_ftp_response(line, (int)strlen(line));
         if (code >= 0) {
             char code_str[16];
             snprintf(code_str, sizeof(code_str), "%d", code);
-            if (strlen(resume) + strlen(code_str) + 13 < 255) {
-                strcat(resume, " | FTP RESP: ");
-                strcat(resume, code_str);
+            if (can_append(resume, " | FTP RESP: ", RESUME_BUFFER_SIZE)) {
+                safe_strcat(resume, " | FTP RESP: ", RESUME_BUFFER_SIZE);
+                safe_strcat(resume, code_str, RESUME_BUFFER_SIZE);
             }
             return 1;
-        } else if (is_ftp_continuation_line(line, strlen(line))) {
+        } else if (is_ftp_continuation_line(line, (int)strlen(line))) {
             // Ligne de continuation (commence par un espace)
             char *content = line + 1; // Enlever le premier espace
             while (*content == ' ') content++; // Enlever les espaces supplémentaires
             
             // Limiter la longueur pour l'affichage
             char cont_display[32] = "";
-            int cont_len = strlen(content);
-            if (cont_len > 30) cont_len = 30;
-            strncpy(cont_display, content, cont_len);
-            cont_display[cont_len] = '\0';
+            int max_display_len = (int)sizeof(cont_display) - 1;
+            // Copy min(strlen(content), max_display_len)
+            int i = 0;
+            while (i < max_display_len && content[i]) {
+                cont_display[i] = content[i];
+                i++;
+            }
+            cont_display[i] = '\0';
             
-            if (strlen(resume) + strlen(cont_display) + 18 < 255) {
-                strcat(resume, " | FTP CONT: ");
-                strcat(resume, cont_display);
+            if (can_append(resume, " | FTP CONT: ", RESUME_BUFFER_SIZE)) {
+                safe_strcat(resume, " | FTP CONT: ", RESUME_BUFFER_SIZE);
+                safe_strcat(resume, cont_display, RESUME_BUFFER_SIZE);
             }
             return 1;
         }
