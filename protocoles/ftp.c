@@ -3,25 +3,6 @@
 Analyseur de messages FTP (couche 7 - Application)
  * 
  * Ce module implémente le parsing des échanges FTP conformément à la RFC 959.
- * FTP (File Transfer Protocol) permet le transfert de fichiers entre systèmes.
- * 
- * Caractéristiques :
- * - Protocole textuel basé sur des lignes (CRLF)
- * - Deux connexions séparées : contrôle (port 21) et données (port 20)
- * - Mode actif : serveur se connecte au client
- * - Mode passif : client se connecte au serveur (PASV/EPSV)
- * 
- * Commandes FTP principales :
- * - USER/PASS : Authentification
- * - PWD/CWD : Navigation répertoires
- * - LIST/NLST : Listage de répertoire
- * - RETR/STOR : Téléchargement/Upload
- * - PASV/EPSV : Mode passif
- * - TYPE : Mode transfert (A=ASCII, I=Binaire)
- * - QUIT : Déconnexion
- * 
- * Codes de réponse : 1xx (info), 2xx (succès), 3xx (intermédiaire),
- *                    4xx (erreur temporaire), 5xx (erreur permanente)
  * 
  */
 
@@ -91,6 +72,7 @@ static int is_ftp_command(const char *line, int len){
 static int is_ftp_response(const char *line, int len) {
     if (len < 3) return -1;
     
+    /* Vérifier que les 3 premiers caractères sont des chiffres */
     if (isdigit(line[0]) && isdigit(line[1]) && isdigit(line[2])) {
         int code = (line[0] - '0') * 100 + (line[1] - '0') * 10 + (line[2] - '0');
         // Les codes FTP sont entre 100 et 599
@@ -119,6 +101,11 @@ static void mask_ftp_password(char *line) {
 
 /**
  * Parse et affiche une commande FTP
+ * @param packet: pointeur vers le début du paquet FTP
+ * @param length: longueur du paquet FTP
+ * @param verbosity: niveau de verbosité (2 ou 3)
+ * @param indent: niveau d'indentation pour l'affichage
+ * @return le nombre d'octets consommés
  */
 static int parse_ftp_command(const u_char *packet, int length, int verbosity, int indent) {
     char line[512];
@@ -190,23 +177,24 @@ static int parse_ftp_response(const u_char *packet, int length, int verbosity, i
         
         // Si c'est une ligne de réponse FTP
         if (code >= 0) {
-            if (first_code < 0) first_code = code;
+            if (first_code < 0) first_code = code;  // Mémoriser le premier code
             
-            // Extraire le message après le code
+            //Extraire le message : sauter le code (3 chars) + séparateur (1 char)
             char *msg_start = line + 3;
             while (*msg_start == ' ' || *msg_start == '-') msg_start++;
             
             // Vérifier si c'est une réponse multi-lignes (code suivi de '-')
             if (line[3] == '-') {
+                // Tiret = format multi-lignes obligatoire
                 is_multi_line = 1;
                 expecting_continuation = 1;
             } else if (line[3] == ' ') {
-                // Vérifier si la ligne suivante commence par un espace (pour FEAT, etc.)
+                // Espace = possiblement simple, mais vérifier la ligne suivante 
                 if (offset + next < length) {
                     char peek_line[512];
                     int peek_next = text_extract_line(packet, offset + next, length - offset - next, peek_line, sizeof(peek_line));
+                    // Si la ligne suivante commence par un espace = continuation
                     if (peek_next > 0 && peek_line[0] == ' ') {
-                        // Ligne suivante commence par un espace, c'est une réponse multi-lignes
                         is_multi_line = 1;
                         expecting_continuation = 1;
                     }
@@ -235,24 +223,24 @@ static int parse_ftp_response(const u_char *packet, int length, int verbosity, i
             offset += next;
             total_consumed += next;
             
-            // Si la ligne ne commence pas par le code suivi de '-', vérifier si on doit continuer
+            // Vérifier s'il y a d'autres lignes à traiter
             if (line[3] != '-') {
-                // Vérifier si la ligne suivante commence par un espace (pour FEAT, LIST, etc.)
+                // Pas de tiret = pas du format "code-text" obligatoire (vérifier si continuation suit)
                 if (offset < length && expecting_continuation) {
                     char peek_line[512];
                     int peek_next = text_extract_line(packet, offset, length - offset, peek_line, sizeof(peek_line));
                     if (peek_next > 0 && peek_line[0] == ' ') {
-                        // Ligne suivante commence par un espace, on continue
-                        continue;
+                        continue;  // Continuation trouvée, traiter la ligne suivante
                     }
                 }
-                // Sinon, c'est la dernière ligne
+                // Pas de continuation = fin de réponse
                 break;
             }
         } else if ((is_multi_line || expecting_continuation) && line[0] == ' ') {
-            // Ligne de continuation qui commence par un espace (pour FEAT, LIST, NLST, HELP, etc.)
-            char *content = line + 1; // Enlever le premier espace
-            while (*content == ' ') content++; // Enlever les espaces supplémentaires
+            // Traitement d'une ligne de continuation (commence par espace)
+            // Utilisé dans les réponses multi-lignes pour FEAT, LIST, NLST, HELP, etc.
+            char *content = line + 1;  // Sauter le premier espace
+            while (*content == ' ') content++;  // Sauter les espaces supplémentaires
             
             if (verbosity == 2) {
                 print_indent(indent);
@@ -266,23 +254,26 @@ static int parse_ftp_response(const u_char *packet, int length, int verbosity, i
             total_consumed += next;
             expecting_continuation = 1;
             
-            // Continuer jusqu'à trouver une ligne qui commence par le code final
+            /* Vérifier quelle est la prochaine ligne :
+               - Code identique au premier = ligne finale du format "code-text"
+               - Espace = autre ligne de continuation
+               - Sinon = fin anormale, sortir */
             if (offset < length) {
                 char peek_line[512];
                 int peek_next = text_extract_line(packet, offset, length - offset, peek_line, sizeof(peek_line));
                 if (peek_next > 0) {
                     int next_code = is_ftp_response(peek_line, (int)strlen(peek_line));
                     if (next_code == first_code) {
-                        // Ligne finale trouvée, on va la traiter au prochain tour
+                        // Code final trouvé = traiter au prochain tour de boucle
                         continue;
                     } else if (next_code < 0 && peek_line[0] == ' ') {
-                        // Encore une ligne qui commence par un espace
+                        // Autre ligne de continuation
                         continue;
                     }
                 }
             }
         } else {
-            // Plus de réponse FTP valide
+            // Ligne non reconnue = fin de réponse FTP
             break;
         }
     }
@@ -371,22 +362,30 @@ int parse_ftp(const u_char *packet, int length, int verbosity, int indent) {
 
 /**
  * Résumé verbosité 1 pour FTP
+ * 
+ * Extrait et affiche en une ligne :
+ * - Commande : "FTP CMD: USER" / "FTP CMD: RETR" / etc
+ * - Réponse : "FTP RESP: 220" / "FTP RESP: 230" / etc
+ * - Continuation : "FTP CONT: <début du contenu>"
  */
 int ftp_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, char *resume) {
     if (caplen < offset_tcp_payload + 2) return 0;
     
+    // Extraire le pointeur vers le début du payload FTP dans le paquet
     const u_char *payload = packet + offset_tcp_payload;
     int payload_len = caplen - offset_tcp_payload;
     
+    // Extraire la première ligne (commande, réponse ou continuation)
     char line[256];
     int next = text_extract_line(payload, 0, payload_len, line, sizeof(line));
     if (next < 0) return 0;
     
-    // Masquer le mot de passe
+    // Masquer le mot de passe si c'est une commande PASS
     mask_ftp_password(line);
     
+    // Vérifier le type de ligne et afficher le résumé correspondant
     if (is_ftp_command(line, (int)strlen(line))) {
-        // Extraire juste la commande (sans arguments)
+        // Commande FTP : extraire juste le mot-clé (USER, RETR, PASV, etc)
         char cmd[16] = "";
         sscanf(line, "%15s", cmd);
         if (can_append(resume, " | FTP CMD: ", RESUME_BUFFER_SIZE)) {
@@ -395,8 +394,10 @@ int ftp_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, cha
         }
         return 1;
     } else {
+        // Vérifier si c'est une réponse FTP (3 chiffres)
         int code = is_ftp_response(line, (int)strlen(line));
         if (code >= 0) {
+            // Réponse FTP valide : afficher le code (220, 230, 550, etc)
             char code_str[16];
             snprintf(code_str, sizeof(code_str), "%d", code);
             if (can_append(resume, " | FTP RESP: ", RESUME_BUFFER_SIZE)) {
@@ -405,14 +406,13 @@ int ftp_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, cha
             }
             return 1;
         } else if (is_ftp_continuation_line(line, (int)strlen(line))) {
-            // Ligne de continuation (commence par un espace)
-            char *content = line + 1; // Enlever le premier espace
-            while (*content == ' ') content++; // Enlever les espaces supplémentaires
+            // Ligne de continuation (commence par un espace, ex: continuation de FEAT, LIST)
+            char *content = line + 1;  // Sauter le premier espace
+            while (*content == ' ') content++;  // Sauter les espaces supplémentaires
             
-            // Limiter la longueur pour l'affichage
+            // Limiter à 31 caractères pour affichage succinct en verbosité 1
             char cont_display[32] = "";
             int max_display_len = (int)sizeof(cont_display) - 1;
-            // Copy min(strlen(content), max_display_len)
             int i = 0;
             while (i < max_display_len && content[i]) {
                 cont_display[i] = content[i];
@@ -429,4 +429,46 @@ int ftp_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, cha
     }
     
     return 0;
+}
+
+/**
+ * Parse le canal de données FTP (port 20)
+ * Affiche la taille du transfert et un aperçu si c'est du texte.
+ */
+int parse_ftp_data(const u_char *packet, int length, int verbosity, int indent) {
+    print_indent(indent);
+    
+    if (verbosity == 2) {
+        printf("FTP-Data: %d bytes transferred\n", length);
+    } else if (verbosity == 3) {
+        printf("[L7] FTP Data Transfer:\n");
+        print_indent(indent + 2);
+        printf("Type: File/Directory data\n");
+        print_indent(indent + 2);
+        printf("Size: %d bytes\n", length);
+        
+        /* Aperçu du contenu si c'est du texte (listing de répertoire) */
+        if (length > 0 && length < 1024) {
+            int is_text = 1;
+            for (int i = 0; i < length && i < 100; i++) {
+                if (packet[i] < 32 && packet[i] != '\r' && packet[i] != '\n' && packet[i] != '\t') {
+                    is_text = 0;
+                    break;
+                }
+            }
+            if (is_text) {
+                print_indent(indent + 2);
+                printf("Content (text preview):\n");
+                print_indent(indent + 2);
+                printf("---\n");
+                fwrite(packet, 1, (size_t)(length < 512 ? length : 512), stdout);
+                if (length > 512) printf("\n... (truncated)");
+                printf("\n");
+                print_indent(indent + 2);
+                printf("---\n");
+            }
+        }
+    }
+    
+    return length;  /* Consommer tout le payload */
 }

@@ -1,42 +1,16 @@
 /**
- * @file icmpv6.c
- * @brief Analyseur de messages ICMPv6 (couche 3.5 - Contrôle)
- * 
- * Ce module implémente le parsing des messages ICMPv6 conformément aux RFCs :
- * - RFC 4443 : ICMPv6 (Internet Control Message Protocol for IPv6)
- * - RFC 4861 : NDP (Neighbor Discovery Protocol) - types 133-137
- * 
- * ICMPv6 remplit des fonctions essentielles en IPv6 :
- * - Signalisation d'erreurs (Destination Unreachable, Packet Too Big, etc.)
- * - Diagnostic (Echo Request/Reply = ping6)
- * - Découverte du voisinage (NDP) - délégué à ndp.c
- * 
- * Next Header IPv6 : 58
- * 
- * Types ICMPv6 :
- * - Erreurs (0-127) :
- *   - 1 : Destination Unreachable
- *   - 2 : Packet Too Big (MTU Path Discovery)
- *   - 3 : Time Exceeded
- *   - 4 : Parameter Problem
- * - Informational (128-255) :
- *   - 128 : Echo Request (ping6)
- *   - 129 : Echo Reply
- *   - 133-137 : NDP (Router/Neighbor Solicitation/Advertisement, Redirect)
- * 
- * @author Projet Services Réseaux M1 SIRIS
- * @date 2024-2025
+ * Ce module implémente le parsing des messages ICMPv6 conformément à la RFC 4443.
+ * Gère les messages d'erreur, de contrôle et délègue les messages NDP (types 133-137).
  */
 
 #include "icmpv6.h"
-#include "ndp.h"  /* Pour déléguer les messages NDP */
+#include "ndp.h"
 #include <stdio.h>
 #include <string.h>
 #include <arpa/inet.h>
 #include "../util/textutils.h"
 #include "../util/safe_string.h"
 
-// Fonction pour récupérer le nom du type ICMPv6
 const char* get_icmpv6_type_name(uint8_t type) {
     switch(type) {
         case ICMP6_DST_UNREACH: return "Destination Unreachable";
@@ -54,7 +28,71 @@ const char* get_icmpv6_type_name(uint8_t type) {
     }
 }
 
-// Parsing de l'en-tête ICMPv6
+/** Génère une chaîne de résumé détaillée pour ICMPv6 en fonction du type et code.
+ * Cette fonction factorise la logique de traduction type+code utilisée
+ * dans toutes les fonctions de parsing et résumé.
+ * @param type        Type ICMPv6.
+ * @param code        Code ICMPv6.
+ * @param output      Buffer de sortie pour la chaîne résumée.
+ * @param output_len  Taille du buffer de sortie.
+ * 
+ */
+static void get_icmpv6_summary_string(uint8_t type, uint8_t code, char *output, size_t output_len) {
+    switch(type) {
+        // Messages NDP
+        case ND_ROUTER_SOLICIT:
+            strncpy(output, "RS", output_len);
+            break;
+        case ND_ROUTER_ADVERT:
+            strncpy(output, "RA", output_len);
+            break;
+        case ND_NEIGHBOR_SOLICIT:
+            strncpy(output, "NS", output_len);
+            break;
+        case ND_NEIGHBOR_ADVERT:
+            strncpy(output, "NA", output_len);
+            break;
+        case ND_REDIRECT:
+            strncpy(output, "Redirect", output_len);
+            break;
+        // Echo
+        case ICMP6_ECHO_REQUEST:
+            strncpy(output, "EchoReq", output_len);
+            break;
+        case ICMP6_ECHO_REPLY:
+            strncpy(output, "EchoRep", output_len);
+            break;
+        // Time Exceeded
+        case ICMP6_TIME_EXCEEDED:
+            strncpy(output, code == 0 ? "TTL Exceeded" : "Frag Timeout", output_len);
+            break;
+        // Destination Unreachable
+        case ICMP6_DST_UNREACH:
+            switch(code) {
+                case 0: strncpy(output, "No Route", output_len); break;
+                case 1: strncpy(output, "Admin Prohib", output_len); break;
+                case 3: strncpy(output, "Addr Unreach", output_len); break;
+                case 4: strncpy(output, "Port Unreach", output_len); break;
+                default: strncpy(output, "Dest Unreach", output_len); break;
+            }
+            break;
+        // Packet Too Big
+        case ICMP6_PACKET_TOO_BIG:
+            strncpy(output, "Pkt Too Big", output_len);
+            break;
+        // Parameter Problem
+        case ICMP6_PARAM_PROB:
+            strncpy(output, "Param Prob", output_len);
+            break;
+        default:
+            snprintf(output, output_len, "T%u", type);
+            break;
+    }
+    output[output_len-1] = '\0';
+}
+
+// Parse et affiche un en-tête ICMPv6
+
 int parse_icmpv6(const u_char *packet, int length, int verbosity, int indent) {
     if (length < (int)sizeof(struct icmp6_hdr)) {
         fprintf(stderr, "ICMPv6: Packet too short for ICMPv6 header (need %zu, got %d)\n",
@@ -72,25 +110,11 @@ int parse_icmpv6(const u_char *packet, int length, int verbosity, int indent) {
         return parse_ndp(packet, length, verbosity, indent);
     }
 
-    /* Sinon, traiter les messages ICMPv6 généraux */
     if(verbosity == 2) {
+        char type_str[64];
+        get_icmpv6_summary_string(type, code, type_str, sizeof(type_str));
         print_indent(indent);
-        
-        /* Affichage avec code détaillé pour les types communs */
-        if(type == ICMP6_DST_UNREACH) {
-            const char *code_str = "Unknown";
-            switch(code) {
-                case 0: code_str = "No Route"; break;
-                case 1: code_str = "Admin Prohibited"; break;
-                case 3: code_str = "Address Unreachable"; break;
-                case 4: code_str = "Port Unreachable"; break;
-            }
-            printf("ICMPv6: Dest Unreach (%s)\n", code_str);
-        } else if(type == ICMP6_TIME_EXCEEDED) {
-            printf("ICMPv6: %s\n", code == 0 ? "TTL Exceeded" : "Fragment Timeout");
-        } else {
-            printf("ICMPv6: %s (type=%u, code=%u)\n", type_name, type, code);
-        }
+        printf("ICMPv6: %s\n", type_str);
     }
     else if(verbosity == 3) {
         print_indent(indent);
@@ -100,31 +124,11 @@ int parse_icmpv6(const u_char *packet, int length, int verbosity, int indent) {
         printf("      Type:     %u (%s)\n", type, type_name);
         
         print_indent(indent);
-        printf("      Code:     %u", code);
-        
-        /* Ajouter description du code pour les types courants */
-        if(type == ICMP6_DST_UNREACH) {
-            switch(code) {
-                case 0: printf(" (No Route to Destination)"); break;
-                case 1: printf(" (Communication Administratively Prohibited)"); break;
-                case 3: printf(" (Address Unreachable)"); break;
-                case 4: printf(" (Port Unreachable)"); break;
-            }
-        } else if(type == ICMP6_TIME_EXCEEDED) {
-            printf(" (%s)", code == 0 ? "Hop Limit Exceeded" : "Fragment Reassembly Time Exceeded");
-        } else if(type == ICMP6_PARAM_PROB) {
-            switch(code) {
-                case 0: printf(" (Erroneous Header Field)"); break;
-                case 1: printf(" (Unrecognized Next Header)"); break;
-                case 2: printf(" (Unrecognized IPv6 Option)"); break;
-            }
-        }
-        printf("\n");
+        printf("      Code:     %u\n", code);
         
         print_indent(indent);
         printf("      Checksum: 0x%04x\n", checksum);
 
-        /* Parser spécifique selon le type */
         switch(type) {
             case ICMP6_ECHO_REQUEST:
             case ICMP6_ECHO_REPLY: {
@@ -134,9 +138,7 @@ int parse_icmpv6(const u_char *packet, int length, int verbosity, int indent) {
                 printf("      ID: %u, Sequence: %u\n", id, seq);
                 break;
             }
-            case ICMP6_DST_UNREACH:
-            case ICMP6_TIME_EXCEEDED:
-            case ICMP6_PARAM_PROB:
+            default:
                 break;
         }
     }
@@ -144,50 +146,39 @@ int parse_icmpv6(const u_char *packet, int length, int verbosity, int indent) {
     return sizeof(struct icmp6_hdr);
 }
 
-int icmpv6_v1_summary(const u_char *packet, int caplen, int offset_ip6_start, char *resume, const char *dst_ip){
-    if(caplen < offset_ip6_start + (int)sizeof(struct icmp6_hdr)) return 0;
-    const struct icmp6_hdr *icmp6 = (const struct icmp6_hdr *)(packet + offset_ip6_start);
-    uint8_t t = icmp6->icmp6_type;
-    uint8_t c = icmp6->icmp6_code;
+// Résumé verbosité 1 pour ICMPv6 avec infos pertinentes selon le type
+
+int icmpv6_v1_summary(const u_char *packet, int caplen, int offset_icmp6, char *resume, const char *dst_ip){
+    if(caplen < offset_icmp6 + (int)sizeof(struct icmp6_hdr)) return 0;
     
-    // Ajouter le préfixe ICMPv6
-    safe_strcat(resume, " | ICMPv6 ", RESUME_BUFFER_SIZE);
+    const struct icmp6_hdr *icmp6 = (const struct icmp6_hdr *)(packet + offset_icmp6);
+    uint8_t type = icmp6->icmp6_type;
+    char type_str[64];
+    get_icmpv6_summary_string(type, icmp6->icmp6_code, type_str, sizeof(type_str));
     
-    // NDP messages
-    if(t == ND_ROUTER_SOLICIT) safe_strcat(resume, "RS", RESUME_BUFFER_SIZE);
-    else if(t == ND_ROUTER_ADVERT) safe_strcat(resume, "RA", RESUME_BUFFER_SIZE);
-    else if(t == ND_NEIGHBOR_SOLICIT) safe_strcat(resume, "NS", RESUME_BUFFER_SIZE);
-    else if(t == ND_NEIGHBOR_ADVERT) safe_strcat(resume, "NA", RESUME_BUFFER_SIZE);
-    else if(t == ND_REDIRECT) safe_strcat(resume, "Redirect", RESUME_BUFFER_SIZE);
-    // ICMPv6 standard messages
-    else if(t == ICMP6_ECHO_REQUEST) safe_strcat(resume, "EchoReq", RESUME_BUFFER_SIZE);
-    else if(t == ICMP6_ECHO_REPLY) safe_strcat(resume, "EchoRep", RESUME_BUFFER_SIZE);
-    else if(t == ICMP6_TIME_EXCEEDED) {
-        safe_strcat(resume, c == 0 ? "TTL Exceeded" : "Frag Timeout", RESUME_BUFFER_SIZE);
+    char icmpv6_info[160];
+    
+    /* Pour NS/NA : afficher l'adresse cible (target) */
+    if((type == ND_NEIGHBOR_SOLICIT || type == ND_NEIGHBOR_ADVERT) &&
+       caplen >= offset_icmp6 + 24) { /* 8 bytes header + 16 bytes target */
+        char target[INET6_ADDRSTRLEN];
+        const struct in6_addr *target_addr = (const struct in6_addr *)(packet + offset_icmp6 + 8);
+        inet_ntop(AF_INET6, target_addr, target, sizeof(target));
+        snprintf(icmpv6_info, sizeof(icmpv6_info), " | ICMPv6 %s %s", type_str, target);
     }
-    else if(t == ICMP6_DST_UNREACH) {
-        switch(c) {
-            case 0: safe_strcat(resume, "No Route", RESUME_BUFFER_SIZE); break;
-            case 1: safe_strcat(resume, "Admin Prohib", RESUME_BUFFER_SIZE); break;
-            case 3: safe_strcat(resume, "Addr Unreach", RESUME_BUFFER_SIZE); break;
-            case 4: safe_strcat(resume, "Port Unreach", RESUME_BUFFER_SIZE); break;
-            default: safe_strcat(resume, "Dest Unreach", RESUME_BUFFER_SIZE); break;
-        }
+    /* Pour RS/RA : afficher juste le type */
+    else if(type == ND_ROUTER_SOLICIT || type == ND_ROUTER_ADVERT) {
+        snprintf(icmpv6_info, sizeof(icmpv6_info), " | ICMPv6 %s", type_str);
     }
-    else if(t == ICMP6_PACKET_TOO_BIG) safe_strcat(resume, "Pkt Too Big", RESUME_BUFFER_SIZE);
-    else if(t == ICMP6_PARAM_PROB) safe_strcat(resume, "Param Prob", RESUME_BUFFER_SIZE);
+    /* Pour Echo : afficher la destination */
+    else if((type == ICMP6_ECHO_REQUEST || type == ICMP6_ECHO_REPLY) && dst_ip && *dst_ip) {
+        snprintf(icmpv6_info, sizeof(icmpv6_info), " | ICMPv6 %s -> %s", type_str, dst_ip);
+    }
+    /* Autres types */
     else {
-        char buf[16]; 
-        snprintf(buf, sizeof(buf), "T%u", t); 
-        safe_strcat(resume, buf, RESUME_BUFFER_SIZE);
+        snprintf(icmpv6_info, sizeof(icmpv6_info), " | ICMPv6 %s", type_str);
     }
     
-    // Ajouter l'IP destination pour Echo Request/Reply (comme ICMP)
-    if((t == ICMP6_ECHO_REQUEST || t == ICMP6_ECHO_REPLY) && dst_ip && strlen(dst_ip) > 0) {
-        char ip_info[128];
-        snprintf(ip_info, sizeof(ip_info), " -> %s", dst_ip);
-        safe_strcat(resume, ip_info, RESUME_BUFFER_SIZE);
-    }
-    
+    safe_strcat(resume, icmpv6_info, RESUME_BUFFER_SIZE);
     return 1;
 }

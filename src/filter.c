@@ -1,25 +1,5 @@
 /**
-
-Module de gestion des filtres BPF (Berkeley Packet Filter)
- * 
- * Ce module fournit une interface simplifiée pour appliquer des filtres
- * de capture réseau via libpcap. Il supporte deux modes :
- * 
- * 1. Alias prédéfinis : Noms courts et mémorisables (dns, web, mail, etc.)
- *    convertis en expressions BPF complètes
- * 
- * 2. Expressions BPF brutes : Passées directement au compilateur pcap
- * 
- * Alias disponibles :
- * - dns     : Trafic DNS (TCP et UDP port 53)
- * - alldns  : Idem que dns
- * - http    : Trafic HTTP uniquement (TCP port 80)
- * - web     : Trafic web HTTP + HTTPS (TCP ports 80, 443)
- * - smtp    : Trafic SMTP (TCP ports 25, 587, 465)
- * - mail    : Tous les protocoles mail (SMTP, IMAP, POP3, variantes TLS)
- * - ftp     : Canal de contrôle FTP (TCP port 21)
- * - telnet  : Trafic Telnet (TCP port 23)
- * - all     : Pas de filtre (capturer tout)
+ * Module de gestion des filtres BPF (Berkeley Packet Filter)
  * 
  */
 
@@ -99,11 +79,6 @@ const char* filter_translate_alias(const char *user_expr) {
 /**
  * Compile et applique un filtre BPF à une session pcap
  * 
- * Cette fonction effectue les étapes suivantes :
- * 1. Traduit l'expression utilisateur (alias → BPF)
- * 2. Récupère les informations réseau de l'interface (si disponible)
- * 3. Compile le filtre BPF
- * 4. Applique le filtre à la session de capture
  * 
  * @param handle          Session pcap active
  * @param interface       Nom de l'interface (peut être NULL pour fichier)

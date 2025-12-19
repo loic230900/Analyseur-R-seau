@@ -1,22 +1,6 @@
 /**
- * @file icmp.c
- * @brief Analyseur de messages ICMP (couche 3.5 - Contrôle)
- * 
  * Ce module implémente le parsing des messages ICMP conformément à la RFC 792.
- * ICMP (Internet Control Message Protocol) est utilisé pour les diagnostics
- * réseau (ping, traceroute) et la signalisation d'erreurs.
  * 
- * Protocole IP : 1
- * 
- * Types ICMP principaux :
- * - Type 0 : Echo Reply (réponse ping)
- * - Type 3 : Destination Unreachable (avec codes pour Net/Host/Port/Proto)
- * - Type 5 : Redirect
- * - Type 8 : Echo Request (requête ping)
- * - Type 11 : Time Exceeded (TTL expiré - traceroute)
- * 
- * @author Projet Services Réseaux M1 SIRIS
- * @date 2024-2025
  */
 
 #include "icmp.h"
@@ -26,15 +10,6 @@
 #include "../util/safe_string.h"
 #include "../util/textutils.h"
 
-/* ============================================================================
- * FONCTION UTILITAIRE - NOM DU TYPE ICMP
- * ============================================================================ */
-
-/**
- * @brief Retourne le nom lisible d'un type ICMP
- * @param type Code du type ICMP
- * @return Chaîne de caractères représentant le type
- */
 const char* get_icmp_type_name(uint8_t type) {
     switch(type) {
         case ICMP_ECHOREPLY:     return "Echo Reply";
@@ -54,18 +29,6 @@ const char* get_icmp_type_name(uint8_t type) {
     }
 }
 
-/* ============================================================================
- * FONCTION DE PARSING PRINCIPALE (VERBOSITÉ 2-3)
- * ============================================================================ */
-
-/**
- * @brief Parse et affiche un en-tête ICMP
- * @param packet Pointeur vers le début de l'en-tête ICMP
- * @param length Longueur restante du paquet
- * @param verbosity Niveau de verbosité (2 ou 3)
- * @param indent Indentation pour l'affichage
- * @return Taille de l'en-tête ICMP (8 octets minimum) ou 0 si erreur
- */
 int parse_icmp(const u_char *packet, int length, int verbosity, int indent) {
     if (length < ICMP_HDR_MIN_LEN) {
         fprintf(stderr, "ICMP: Packet too short (need %d, got %d)\n", 
@@ -79,13 +42,10 @@ int parse_icmp(const u_char *packet, int length, int verbosity, int indent) {
     uint16_t checksum = ntohs(icmp->checksum);
     const char *type_name = get_icmp_type_name(type);
 
-    /* Verbosité 2 : affichage synthétique sur une ligne */
     if (verbosity == 2) {
         print_indent(indent);
         printf("ICMP: %s (type=%u, code=%u)\n", type_name, type, code);
-    }
-    /* Verbosité 3 : affichage détaillé avec indicateur de couche OSI */
-    else if (verbosity == 3) {
+    } else if (verbosity == 3) {
         print_indent(indent);
         printf("[L4] ICMP Header:\n");
         
@@ -98,7 +58,6 @@ int parse_icmp(const u_char *packet, int length, int verbosity, int indent) {
         print_indent(indent);
         printf("      Checksum: 0x%04x\n", checksum);
 
-        /* Données spécifiques pour Echo Request/Reply */
         switch(type) {
             case ICMP_ECHO:
             case ICMP_ECHOREPLY: {
@@ -117,75 +76,79 @@ int parse_icmp(const u_char *packet, int length, int verbosity, int indent) {
     return ICMP_HDR_MIN_LEN;
 }
 
-/* ============================================================================
- * FONCTIONS DE RÉSUMÉ (VERBOSITÉ 1)
- * ============================================================================ */
-
-/**
- * @brief Génère un résumé ICMP pour la verbosité 1
- * @param packet Pointeur vers le début du paquet
- * @param caplen Longueur capturée
- * @param offset_ip_start Offset de l'en-tête ICMP dans le paquet
- * @param resume Buffer de résumé à remplir
- * @return 1 si succès, 0 si erreur
+/** Génère une chaîne de résumé détaillée pour ICMP en fonction du type et code.
+ * Cette fonction factorise la logique de traduction type+code utilisée
+ * dans les fonctions de résumé verbosité 1.
+ * @param type        Type ICMP.
+ * @param code        Code ICMP.
+ * @param output      Buffer de sortie pour la chaîne résumée.
+ * @param output_len  Taille du buffer de sortie.
  */
-int icmp_v1_summary(const u_char *packet, int caplen, int offset_ip_start, char *resume) {
-    if(caplen < offset_ip_start + ICMP_HDR_MIN_LEN) return 0;
-    const struct icmphdr *icmp = (const struct icmphdr *)(packet + offset_ip_start);
-    switch(icmp->type){
-        case ICMP_ECHO: safe_strcat(resume, " EchoReq", RESUME_BUFFER_SIZE); break;
-        case ICMP_ECHOREPLY: safe_strcat(resume, " EchoRep", RESUME_BUFFER_SIZE); break;
-        case ICMP_DEST_UNREACH: safe_strcat(resume, " Unreach", RESUME_BUFFER_SIZE); break;
-        case ICMP_TIME_EXCEEDED: safe_strcat(resume, " TimeEx", RESUME_BUFFER_SIZE); break;
-        case ICMP_REDIRECT: safe_strcat(resume, " Redirect", RESUME_BUFFER_SIZE); break;
-        default: {
-            char tmp[16]; 
-            snprintf(tmp, sizeof(tmp), " T%u", icmp->type);
-            safe_strcat(resume, tmp, RESUME_BUFFER_SIZE);
-        }
-    }
-    return 1;
-}
-
-/**
- * @brief Génère un résumé ICMP avec adresse IP de destination
- * @param packet Pointeur vers le début du paquet
- * @param caplen Longueur capturée
- * @param offset_icmp_start Offset de l'en-tête ICMP
- * @param resume Buffer de résumé à remplir
- * @param dst_ip Adresse IP de destination formatée
- * @return 1 si succès, 0 si erreur
- */
-int icmp_v1_summary_with_ip(const u_char *packet, int caplen, int offset_icmp_start, char *resume, const char *dst_ip){
-    if(caplen < offset_icmp_start + 8) return 0;
-    const struct icmphdr *icmp = (const struct icmphdr *)(packet + offset_icmp_start);
-    char type_str[64] = "";
-    switch(icmp->type){
-        case ICMP_ECHO: strcpy(type_str, "EchoReq"); break;
-        case ICMP_ECHOREPLY: strcpy(type_str, "EchoRep"); break;
+static void get_icmp_summary_string(uint8_t type, uint8_t code, char *output, size_t output_len) {
+    switch(type) {
+        case ICMP_ECHO:
+            strncpy(output, "EchoReq", output_len);
+            break;
+        case ICMP_ECHOREPLY:
+            strncpy(output, "EchoRep", output_len);
+            break;
         case ICMP_DEST_UNREACH:
-            switch(icmp->code) {
-                case ICMP_NET_UNREACH: strcpy(type_str, "Net Unreach"); break;
-                case ICMP_HOST_UNREACH: strcpy(type_str, "Host Unreach"); break;
-                case ICMP_PROT_UNREACH: strcpy(type_str, "Proto Unreach"); break;
-                case ICMP_PORT_UNREACH: strcpy(type_str, "Port Unreach"); break;
-                default: strcpy(type_str, "Dest Unreach"); break;
+            switch(code) {
+                case ICMP_NET_UNREACH:  strncpy(output, "Net Unreach", output_len); break;
+                case ICMP_HOST_UNREACH: strncpy(output, "Host Unreach", output_len); break;
+                case ICMP_PROT_UNREACH: strncpy(output, "Proto Unreach", output_len); break;
+                case ICMP_PORT_UNREACH: strncpy(output, "Port Unreach", output_len); break;
+                default: strncpy(output, "Dest Unreach", output_len); break;
             }
             break;
         case ICMP_TIME_EXCEEDED:
-            strcpy(type_str, icmp->code == 0 ? "TTL Exceeded" : "Frag Timeout");
+            strncpy(output, code == 0 ? "TTL Exceeded" : "Frag Timeout", output_len);
             break;
         case ICMP_REDIRECT:
-            switch(icmp->code) {
-                case 0: strcpy(type_str, "Redir Net"); break;
-                case 1: strcpy(type_str, "Redir Host"); break;
-                default: strcpy(type_str, "Redirect"); break;
+            switch(code) {
+                case 0: strncpy(output, "Redir Net", output_len); break;
+                case 1: strncpy(output, "Redir Host", output_len); break;
+                default: strncpy(output, "Redirect", output_len); break;
             }
             break;
-        default: {
-            snprintf(type_str, sizeof(type_str), "T%u", icmp->type);
-        }
+        default:
+            snprintf(output, output_len, "T%u", type);
+            break;
     }
+    output[output_len-1] = '\0';
+}
+
+/** Génère un résumé court ICMP pour verbosité 1 (sans IP destination).
+ * Ajoute au buffer resume une description du type ICMP.
+ * @param packet         Pointeur vers le début du paquet complet.
+ * @param caplen         Longueur capturée totale.
+ * @param offset_ip_start Offset du début de l'en-tête ICMP (après IP header).
+ * @param resume         Buffer de sortie pour le résumé.
+ * @return               1 en succès, 0 en échec.
+ * 
+ */
+int icmp_v1_summary(const u_char *packet, int caplen, int offset_ip_start, char *resume) {
+    if(caplen < offset_ip_start + ICMP_HDR_MIN_LEN) return 0;
+    
+    const struct icmphdr *icmp = (const struct icmphdr *)(packet + offset_ip_start);
+    char type_str[32];
+    get_icmp_summary_string(icmp->type, icmp->code, type_str, sizeof(type_str));
+    
+    char icmp_info[64];
+    snprintf(icmp_info, sizeof(icmp_info), " | ICMP %s", type_str);
+    safe_strcat(resume, icmp_info, RESUME_BUFFER_SIZE);
+    
+    return 1;
+}
+
+// Résumé verbosité 1 pour ICMP avec IP de destination
+
+int icmp_v1_summary_with_ip(const u_char *packet, int caplen, int offset_icmp_start, char *resume, const char *dst_ip){
+    if(caplen < offset_icmp_start + ICMP_HDR_MIN_LEN) return 0;
+    
+    const struct icmphdr *icmp = (const struct icmphdr *)(packet + offset_icmp_start);
+    char type_str[32];
+    get_icmp_summary_string(icmp->type, icmp->code, type_str, sizeof(type_str));
     
     char icmp_info[128];
     if(dst_ip && strlen(dst_ip) > 0) {

@@ -34,6 +34,16 @@ int parse_ftp(const u_char *packet, int length, int verbosity, int indent);
  */
 int ftp_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, char *resume);
 
+/**
+ * Analyse un paquet FTP-Data (canal de données, port 20).
+ * @param packet    Pointeur vers le début du payload TCP.
+ * @param length    Longueur du payload TCP disponible.
+ * @param verbosity Niveau de verbosité (2 ou 3).
+ * @param indent    Indentation en espaces pour l'affichage.
+ * @return          Nombre d'octets consommés.
+ */
+int parse_ftp_data(const u_char *packet, int length, int verbosity, int indent);
+
 /* Ports FTP */
 #define FTP_PORT_CONTROL    21  
 #define FTP_PORT_DATA       20  

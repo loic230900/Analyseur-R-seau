@@ -1,27 +1,8 @@
 /**
- * @file tcp.c
- * @brief Analyseur de segments TCP (couche 4 - Transport)
+ * Analyseur de segments TCP 
  * 
  * Ce module implémente le parsing des segments TCP conformément à la RFC 793.
- * TCP (Transmission Control Protocol) assure une transmission fiable,
- * ordonnée et avec contrôle de flux des données.
  * 
- * Protocole IP : 6
- * 
- * Structure de l'en-tête TCP (20-60 octets) :
- * - Port source (16 bits)
- * - Port destination (16 bits)
- * - Numéro de séquence (32 bits)
- * - Numéro d'acquittement (32 bits)
- * - Data Offset (4 bits) : taille de l'en-tête en mots de 32 bits
- * - Flags (9 bits) : NS, CWR, ECE, URG, ACK, PSH, RST, SYN, FIN
- * - Fenêtre (16 bits) : taille de la fenêtre de réception
- * - Checksum (16 bits)
- * - Pointeur urgent (16 bits)
- * - Options (0-40 octets) : MSS, Window Scale, SACK, Timestamps
- * 
- * @author Projet Services Réseaux M1 SIRIS
- * @date 2024-2025
  */
 
 #include "tcp.h"
@@ -31,6 +12,7 @@
 #include <netinet/tcp.h>
 #include "../util/safe_string.h"
 #include "../util/textutils.h"
+#include "../include/detection.h"
 
 /* Définitions des flags TCP si non disponibles */
 #ifndef TH_ECE
@@ -40,23 +22,44 @@
 #define TH_CWR 0x80
 #endif
 
-/* ============================================================================
- * FONCTION DE PARSING PRINCIPALE (VERBOSITÉ 2-3)
- * ============================================================================ */
+/* Table des flags TCP pour affichage */
+static const struct { uint8_t mask; const char *name; } tcp_flags[] = {
+    {TH_SYN, "SYN"}, {TH_ACK, "ACK"}, {TH_FIN, "FIN"}, {TH_RST, "RST"},
+    {TH_PUSH, "PSH"}, {TH_URG, "URG"}, {TH_ECE, "ECE"}, {TH_CWR, "CWR"}
+};
+#define TCP_FLAGS_COUNT (sizeof(tcp_flags) / sizeof(tcp_flags[0]))
 
-/**
- * @brief Parse et affiche un en-tête TCP
- * @param packet Pointeur vers le début de l'en-tête TCP
- * @param length Longueur restante du paquet
- * @param verbosity Niveau de verbosité (2 ou 3)
- * @param indent Indentation pour l'affichage
- * @param src_port Pointeur de sortie pour le port source
- * @param dst_port Pointeur de sortie pour le port destination
- * @param flags Pointeur de sortie pour les flags TCP
- * @return Taille de l'en-tête TCP ou 0 si erreur
- */
-int parse_tcp(const u_char *packet, int length, int verbosity, int indent,
-              uint16_t *src_port, uint16_t *dst_port, uint8_t *flags) {
+/* Table des services TCP connus */
+static const struct { uint16_t port; const char *name; } tcp_services[] = {
+    {22, "SSH"}, {3306, "MySQL"}, {5432, "PostgreSQL"}, {6379, "Redis"},
+    {27017, "MongoDB"}, {8080, "HTTP-Alt"}, {8443, "HTTPS-Alt"},
+    {3389, "RDP"}, {5900, "VNC"}, {1433, "MSSQL"}, {389, "LDAP"}, {636, "LDAPS"}
+};
+#define TCP_SERVICES_COUNT (sizeof(tcp_services) / sizeof(tcp_services[0]))
+
+/* Recherche un service TCP par port */
+static const char *lookup_tcp_service(uint16_t sp, uint16_t dp) {
+    for(size_t i = 0; i < TCP_SERVICES_COUNT; i++) {
+        if(sp == tcp_services[i].port || dp == tcp_services[i].port)
+            return tcp_services[i].name;
+    }
+    return NULL;
+}
+
+/* Construit la chaîne des flags TCP */
+static void build_flags_str(uint8_t flags, char *buf, size_t bufsize) {
+    buf[0] = '\0';
+    for(size_t i = 0; i < TCP_FLAGS_COUNT; i++) {
+        if(flags & tcp_flags[i].mask) {
+            if(buf[0]) safe_strcat(buf, " ", bufsize);
+            safe_strcat(buf, tcp_flags[i].name, bufsize);
+        }
+    }
+}
+
+// Verbosité 2-3 : parse et affiche l'en-tête TCP
+
+int parse_tcp(const u_char *packet, int length, int verbosity, int indent, uint16_t *src_port, uint16_t *dst_port, uint8_t *flags) {
     if (length < (int)sizeof(struct tcphdr)) {
         fprintf(stderr, "TCP: Packet too short (need %zu, got %d)\n",
                 sizeof(struct tcphdr), length);
@@ -90,22 +93,9 @@ int parse_tcp(const u_char *packet, int length, int verbosity, int indent,
         return 0;
     }
 
-    /* Construction de la chaîne de flags avec safe_strcat pour cohérence */
-    char flags_str[64] = "";
-    if (*flags & TH_SYN) safe_strcat(flags_str, "SYN ", sizeof(flags_str));
-    if (*flags & TH_ACK) safe_strcat(flags_str, "ACK ", sizeof(flags_str));
-    if (*flags & TH_FIN) safe_strcat(flags_str, "FIN ", sizeof(flags_str));
-    if (*flags & TH_RST) safe_strcat(flags_str, "RST ", sizeof(flags_str));
-    if (*flags & TH_PUSH) safe_strcat(flags_str, "PSH ", sizeof(flags_str));
-    if (*flags & TH_URG) safe_strcat(flags_str, "URG ", sizeof(flags_str));
-    if (*flags & TH_ECE) safe_strcat(flags_str, "ECE ", sizeof(flags_str));
-    if (*flags & TH_CWR) safe_strcat(flags_str, "CWR ", sizeof(flags_str));
-    
-    /* Supprimer l'espace final si présent */
-    size_t len = strlen(flags_str);
-    if (len > 0 && flags_str[len-1] == ' ') {
-        flags_str[len-1] = '\0';
-    }
+    /* Construction de la chaîne de flags */
+    char flags_str[64];
+    build_flags_str(*flags, flags_str, sizeof(flags_str));
 
     /* Verbosité 2 : affichage synthétique */
     if (verbosity == 2) {
@@ -211,10 +201,6 @@ int parse_tcp(const u_char *packet, int length, int verbosity, int indent,
     return header_len;
 }
 
-/* ============================================================================
- * FONCTIONS DE RÉSUMÉ (VERBOSITÉ 1)
- * ============================================================================ */
-
 /**
  * @brief Génère un résumé des flags TCP pour la verbosité 1
  * @param packet Paquet complet
@@ -222,10 +208,12 @@ int parse_tcp(const u_char *packet, int length, int verbosity, int indent,
  * @param offset_transport Offset vers l'en-tête TCP
  * @param payload_len Longueur de la charge utile TCP
  * @param resume Buffer de sortie pour le résumé
+ * @param src_ip Adresse IP source (chaîne de caractères)
+ * @param dst_ip Adresse IP destination (chaîne de caractères)
  * @return 1 si succès, 0 si erreur
  */
 int tcp_v1_flags_summary(const u_char *packet, int caplen, int offset_transport, 
-                         int payload_len, char *resume) {
+                         int payload_len, char *resume, const char *src_ip, const char *dst_ip) {
     if(caplen < offset_transport + (int)sizeof(struct tcphdr)) return 0;
     
     /* Ajouter le préfixe TCP */
@@ -258,47 +246,45 @@ int tcp_v1_flags_summary(const u_char *packet, int caplen, int offset_transport,
         safe_strcat(resume, " [ECN]", RESUME_BUFFER_SIZE);
     }
     
-    /* Indication si ACK pur sans payload */
-    if((fl & TH_ACK) && payload_len <= 0) {
-        safe_strcat(resume, " (no payload)", RESUME_BUFFER_SIZE);
+    /* Extraction des ports pour affichage */
+    const struct tcphdr *tcp = (const struct tcphdr *)(packet + offset_transport);
+    uint16_t sp = ntohs(tcp->source), dp = ntohs(tcp->dest);
+    
+    /* Indication si paquet sans payload - annoter avec le service si connu */
+    if(payload_len <= 0) {
+        const char *service = get_tcp_service_name(sp, dp);
+        
+        if(service) {
+            char hint[128];
+            snprintf(hint, sizeof(hint), " (->%s, no payload) %s[%u] -> %s[%u]", 
+                     service, src_ip, sp, dst_ip, dp);
+            safe_strcat(resume, hint, RESUME_BUFFER_SIZE);
+        } else {
+            char hint[96];
+            snprintf(hint, sizeof(hint), " (no payload) %s[%u] -> %s[%u]", 
+                     src_ip, sp, dst_ip, dp);
+            safe_strcat(resume, hint, RESUME_BUFFER_SIZE);
+        }
     }
     
     return 1;
 }
 
-/**
- * @brief Génère un résumé des ports TCP pour la verbosité 1
- * @param packet Paquet complet
- * @param caplen Longueur capturée
- * @param offset_transport Offset vers l'en-tête TCP
- * @param resume Buffer de sortie pour le résumé
- * @return 1 si succès, 0 si erreur
- */
-int tcp_v1_ports_summary(const u_char *packet, int caplen, int offset_transport, char *resume) {
+
+int tcp_v1_ports_summary(const u_char *packet, int caplen, int offset_transport, 
+                         char *resume, const char *src_ip, const char *dst_ip) {
     if(caplen < offset_transport + (int)sizeof(struct tcphdr)) return 0;
     const struct tcphdr *tcp = (const struct tcphdr *)(packet + offset_transport);
     uint16_t sp = ntohs(tcp->source), dp = ntohs(tcp->dest);
     
     /* Identifier les services connus non parsés par défaut */
-    const char *service = NULL;
-    if(sp == 22 || dp == 22) service = "SSH";
-    else if(sp == 3306 || dp == 3306) service = "MySQL";
-    else if(sp == 5432 || dp == 5432) service = "PostgreSQL";
-    else if(sp == 6379 || dp == 6379) service = "Redis";
-    else if(sp == 27017 || dp == 27017) service = "MongoDB";
-    else if(sp == 8080 || dp == 8080) service = "HTTP-Alt";
-    else if(sp == 8443 || dp == 8443) service = "HTTPS-Alt";
-    else if(sp == 3389 || dp == 3389) service = "RDP";
-    else if(sp == 5900 || dp == 5900) service = "VNC";
-    else if(sp == 1433 || dp == 1433) service = "MSSQL";
-    else if(sp == 389 || dp == 389) service = "LDAP";
-    else if(sp == 636 || dp == 636) service = "LDAPS";
+    const char *service = lookup_tcp_service(sp, dp);
     
-    char tmp[64];
+    char tmp[128];
     if(service) {
-        snprintf(tmp, sizeof(tmp), " %u>%u (%s)", sp, dp, service);
+        snprintf(tmp, sizeof(tmp), " %s[%u] -> %s[%u] (%s)", src_ip, sp, dst_ip, dp, service);
     } else {
-        snprintf(tmp, sizeof(tmp), " %u>%u", sp, dp);
+        snprintf(tmp, sizeof(tmp), " %s[%u] -> %s[%u]", src_ip, sp, dst_ip, dp);
     }
     safe_strcat(resume, tmp, RESUME_BUFFER_SIZE);
     return 1;

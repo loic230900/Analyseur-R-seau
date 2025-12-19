@@ -1,19 +1,9 @@
 /**
- * @file rarp.c
- * @brief Analyseur de messages RARP (couche 2 - Liaison de données)
- * 
+ *
  * Ce module implémente le parsing des messages RARP conformément à la RFC 903.
  * RARP (Reverse Address Resolution Protocol) permet la résolution d'adresses
- * MAC en adresses IP (inverse de ARP). Obsolète, remplacé par BOOTP/DHCP.
- * 
- * Structure identique à ARP mais avec des opérations différentes :
- * - Operation 3 : RARP Request
- * - Operation 4 : RARP Reply
- * 
- * EtherType : 0x8035
- * 
- * @author Projet Services Réseaux M1 SIRIS
- * @date 2024-2025
+ * MAC en adresses IP (inverse de ARP).
+ * Code similaire a ARP, avec opcodes spécifiques RARP.
  */
 
 #include "rarp.h"
@@ -25,6 +15,7 @@
 #include "../util/textutils.h"
 
 // Fonction d'analyse
+
 int parse_rarp(const u_char *packet, int length, int verbosity, int indent){
     if(length < RARP_HDR_LEN){ // Taille minimale de l'en-tête RARP (identique à ARP)
         fprintf(stderr, "RARP: Packet too short for RARP header (need %d, got %d)\n", RARP_HDR_LEN, length);

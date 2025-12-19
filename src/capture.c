@@ -1,17 +1,7 @@
 /**
  * Ce module implémente la fonction packet_handler() qui est appelée par
  * pcap_loop() pour chaque paquet reçu. Il coordonne l'analyse couche par
- * couche selon le modèle OSI :
- * 
- * Couche 2 (Liaison) : Ethernet, ARP, RARP
- * Couche 3 (Réseau)  : IPv4, IPv6
- * Couche 4 (Transport) : TCP, UDP, ICMP, ICMPv6
- * Couche 7 (Application) : DNS, HTTP, SMTP, FTP, etc.
- * 
- * L'affichage s'adapte au niveau de verbosité demandé :
- * - Niveau 1 : Une ligne par trame (format concis)
- * - Niveau 2 : Une ligne par protocole (format synthétique)
- * - Niveau 3 : Tous les champs détaillés (format complet)
+ * couche
  */
 
 #include <netinet/tcp.h>
@@ -32,6 +22,37 @@
 #include "util/safe_string.h"
 #include "util/display_constants.h"
 
+/* Table des EtherTypes connus non parsés en détail */
+static const struct { uint16_t type; const char *name; } known_ethertypes[] = {
+    {0x8100, "802.1Q VLAN"},
+    {0x88CC, "LLDP"},
+    {0x887B, "HomePlug AV"},
+    {0x8863, "PPPoE Discovery"},
+    {0x8864, "PPPoE Session"},
+    {0x88F7, "PTP"}
+};
+#define KNOWN_ETHERTYPES_COUNT (sizeof(known_ethertypes) / sizeof(known_ethertypes[0]))
+
+/* Recherche un EtherType connu, retourne NULL si non trouvé */
+static const char *lookup_ethertype(uint16_t type) {
+    for (size_t i = 0; i < KNOWN_ETHERTYPES_COUNT; i++) {
+        if (known_ethertypes[i].type == type) return known_ethertypes[i].name;
+    }
+    return NULL;
+}
+
+/* Affiche le hexdump des données restantes (verbosité 3 uniquement) */
+static void dump_remaining(const u_char *packet, int caplen, int offset, int indent) {
+    int remaining = caplen - offset;
+    if (remaining <= 0) return;
+    int to_dump = remaining > MAX_HEXDUMP_BYTES ? MAX_HEXDUMP_BYTES : remaining;
+    print_indent(indent);
+    printf("Remaining data (%d bytes", remaining);
+    if (remaining > MAX_HEXDUMP_BYTES) printf(", first %d shown", to_dump);
+    printf("):\n");
+    print_hexdump(packet + offset, to_dump);
+}
+
 /**
  * Traite la couche transport pour le niveau de verbosité 1 (concis)
  * Factorise le traitement de la couche 4 pour les paquets IPv4 et IPv6.
@@ -41,11 +62,12 @@
  * @param l4_offset Offset du début de la couche 4 dans le paquet
  * @param protocol Numéro de protocole (IPPROTO_TCP, IPPROTO_UDP, etc.)
  * @param resume   Buffer de sortie pour construire le résumé
- * @param dst_ip   Adresse IP destination (pour ICMP, affichage de la cible)
+ * @param src_ip   Adresse IP source (pour affichage TCP/UDP)
+ * @param dst_ip   Adresse IP destination (pour ICMP/TCP/UDP)
  */
 static void handle_transport_layer_v1(const u_char *packet, int caplen, 
                                        int l4_offset, uint8_t protocol,
-                                       char *resume, const char *dst_ip) {
+                                       char *resume, const char *src_ip, const char *dst_ip) {
     // Traitement ICMP (IPv4 uniquement)
     if(protocol == IPPROTO_ICMP && dst_ip != NULL) { 
         icmp_v1_summary_with_ip(packet, caplen, l4_offset, resume, dst_ip);
@@ -61,9 +83,9 @@ static void handle_transport_layer_v1(const u_char *packet, int caplen,
             const struct tcphdr *tcp = (const struct tcphdr *)(packet + l4_offset);
             int tcp_header_len = tcp->doff * 4;  /* doff = nombre de mots de 32 bits */
             int tcp_payload_len = caplen - l4_offset - tcp_header_len;
-            tcp_v1_flags_summary(packet, caplen, l4_offset, tcp_payload_len, resume);
+            tcp_v1_flags_summary(packet, caplen, l4_offset, tcp_payload_len, resume, src_ip, dst_ip);
         } else {
-            tcp_v1_flags_summary(packet, caplen, l4_offset, 0, resume);
+            tcp_v1_flags_summary(packet, caplen, l4_offset, 0, resume, src_ip, dst_ip);
         }
         
         /* Détection et traitement des protocoles applicatifs TCP */
@@ -80,10 +102,11 @@ static void handle_transport_layer_v1(const u_char *packet, int caplen,
                                                        tcp_payload_start, 0);
             if(detected != APP_PROTO_TCP_NONE) {
                 process_app_tcp_v1(detected, packet, caplen, tcp_payload_offset, 
-                                   resume, sp, dp);
-            } else {
-                /* Afficher les ports génériques si pas d'application reconnue */
-                tcp_v1_ports_summary(packet, caplen, l4_offset, resume);
+                                   resume, sp, dp, src_ip, dst_ip);
+            } else if(tcp_payload_len > 0) {
+                /* Afficher les ports génériques seulement si payload présent mais non reconnu
+                 * Les paquets sans payload ont déjà les ports dans tcp_v1_flags_summary() */
+                tcp_v1_ports_summary(packet, caplen, l4_offset, resume, src_ip, dst_ip);
             }
         }
     }
@@ -97,10 +120,10 @@ static void handle_transport_layer_v1(const u_char *packet, int caplen,
             
             app_proto_udp_t detected = detect_app_udp(sp, dp);
             if(detected != APP_PROTO_UDP_NONE) {
-                process_app_udp_v1(detected, packet, caplen, udp_payload_offset, resume);
+                process_app_udp_v1(detected, packet, caplen, udp_payload_offset, resume, sp, dp, src_ip, dst_ip);
             } else {
                 /* Afficher les ports génériques si pas d'application reconnue */
-                udp_v1_ports_summary(packet, caplen, l4_offset, resume);
+                udp_v1_ports_summary(packet, caplen, l4_offset, resume, src_ip, dst_ip);
             }
         }
     }
@@ -191,17 +214,7 @@ static void handle_transport_layer_v2v3(const u_char *packet, int caplen,
  * Callback de traitement des paquets pour pcap_loop()
  * Cette fonction est appelée automatiquement par libpcap pour chaque paquet
  * capturé. Elle implémente le traitement complet d'une trame Ethernet :
- * 
- * 1. Extraction des métadonnées (timestamp, longueurs)
- * 2. Analyse de l'en-tête Ethernet et détermination de l'EtherType
- * 3. Routage vers le parseur de couche 3 approprié (IPv4, IPv6, ARP, RARP)
- * 4. Pour IP : analyse de la couche 4 (TCP, UDP, ICMP)
- * 5. Pour TCP/UDP : détection et analyse du protocole applicatif
- * 
- * Optimisation du formatage des timestamps :
- * - Variables statiques pour éviter les appels répétés à localtime()
- * - Le cache est invalidé uniquement si la seconde change
- * 
+
  * @param args   Données utilisateur passées à pcap_loop() (capture_args_t*)
  * @param header Métadonnées du paquet (timestamp, longueurs)
  * @param packet Pointeur vers les données brutes de la trame
@@ -253,14 +266,17 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                 if((int)caplen >= ETHER_HDR_LEN + ihl){
                     int l4off = ETHER_HDR_LEN + ihl;
                     
-                    /* Extraction de l'IP destination pour affichage ICMP */
+                    /* Extraction des IPs source et destination pour affichage */
+                    char src_ip[INET_ADDRSTRLEN];
                     char dst_ip[INET_ADDRSTRLEN];
+                    struct in_addr src_addr = { .s_addr = ip->saddr };
                     struct in_addr dst_addr = { .s_addr = ip->daddr };
+                    inet_ntop(AF_INET, &src_addr, src_ip, sizeof(src_ip));
                     inet_ntop(AF_INET, &dst_addr, dst_ip, sizeof(dst_ip));
                     
                     /* Dispatch vers la couche transport (fonction factorisée) */
                     handle_transport_layer_v1(packet, caplen, l4off, ip->protocol, 
-                                              resume, dst_ip);
+                                              resume, src_ip, dst_ip);
                 }
             }
         } 
@@ -275,31 +291,22 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                 if(ip6_len > 0) {
                     int l4off = ETHER_HDR_LEN + ip6_len;
                     
-                    /* Extraction de l'IP destination IPv6 pour ICMPv6 */
+                    /* Extraction des IPs source et destination IPv6 */
+                    char src_ip6[INET6_ADDRSTRLEN] = "";
                     char dst_ip6[INET6_ADDRSTRLEN] = "";
                     const struct ip6_hdr *ip6 = (const struct ip6_hdr *)(packet + ETHER_HDR_LEN);
+                    inet_ntop(AF_INET6, &ip6->ip6_src, src_ip6, sizeof(src_ip6));
                     inet_ntop(AF_INET6, &ip6->ip6_dst, dst_ip6, sizeof(dst_ip6));
                     
                     /* Dispatch vers la couche transport avec le protocole final */
-                    handle_transport_layer_v1(packet, caplen, l4off, final_protocol, resume, dst_ip6);
+                    handle_transport_layer_v1(packet, caplen, l4off, final_protocol, resume, src_ip6, dst_ip6);
                 }
             }
         }
         // EtherTypes connus mais non parsés en détail
-        else if(ethertype == 0x8100) {  /* 802.1Q VLAN tagging */
-            snprintf(resume, RESUME_BUFFER_SIZE, "802.1Q VLAN");
-        }
-        else if(ethertype == 0x88CC) {  /* LLDP (Link Layer Discovery Protocol) */
-            snprintf(resume, RESUME_BUFFER_SIZE, "LLDP");
-        }
-        else if(ethertype == 0x887B) {  /* HomePlug AV (courants porteurs) */
-            snprintf(resume, RESUME_BUFFER_SIZE, "HomePlug AV");
-        }
-        else if(ethertype == 0x8863 || ethertype == 0x8864) {  /* PPPoE */
-            snprintf(resume, RESUME_BUFFER_SIZE, "PPPoE");
-        }
-        else if(ethertype == 0x88F7) {  /* PTP (Precision Time Protocol) */
-            snprintf(resume, RESUME_BUFFER_SIZE, "PTP");
+        else {
+            const char *eth_name = lookup_ethertype(ethertype);
+            if (eth_name) snprintf(resume, RESUME_BUFFER_SIZE, "%s", eth_name);
         }
         
         /* Fallback pour les EtherTypes inconnus */
@@ -359,17 +366,7 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                 handle_transport_layer_v2v3(packet, caplen, &offset, &indent, proto, verbosity, 0);
                 
                 /* Hexdump des données restantes non parsées (verbosité 3) */
-                if(verbosity == 3 && offset < caplen) {
-                    int remaining = caplen - offset;
-                    if(remaining > 0) {
-                        int to_dump = remaining > MAX_HEXDUMP_BYTES ? MAX_HEXDUMP_BYTES : remaining;
-                        print_indent(indent);
-                        printf("Remaining data (%d bytes", remaining);
-                        if(remaining > MAX_HEXDUMP_BYTES) printf(", first %d displayed", to_dump);
-                        printf("):\n");
-                        print_hexdump(packet + offset, to_dump);
-                    }
-                }
+                if(verbosity == 3) dump_remaining(packet, caplen, offset, indent);
             }
         }
         // Protocole IPv6 (couche 3)
@@ -384,32 +381,15 @@ void packet_handler(u_char *args, const struct pcap_pkthdr *header, const u_char
                 handle_transport_layer_v2v3(packet, caplen, &offset, &indent, next_header, verbosity, 1);
                 
                 /* Hexdump des données restantes non parsées (verbosité 3) */
-                if(verbosity == 3 && offset < caplen) {
-                    int remaining = caplen - offset;
-                    if(remaining > 0) {
-                        int to_dump = remaining > MAX_HEXDUMP_BYTES ? MAX_HEXDUMP_BYTES : remaining;
-                        print_indent(indent);
-                        printf("Remaining data (%d bytes", remaining);
-                        if(remaining > MAX_HEXDUMP_BYTES) printf(", first %d shown", to_dump);
-                        printf("):\n");
-                        print_hexdump(packet + offset, to_dump);
-                    }
-                }
+                if(verbosity == 3) dump_remaining(packet, caplen, offset, indent);
             }
         }
-        // Autres EtherTypes connus (non parsés en détail)
-        else if(ethertype == 0x8100) {  /* 802.1Q VLAN tagging */
-            print_indent(indent);
-            printf("802.1Q VLAN Tag (not parsed)\n");
-        }
-        else if(ethertype == 0x88CC) {  /* LLDP (Link Layer Discovery Protocol) */
-            print_indent(indent);
-            printf("LLDP - Link Layer Discovery Protocol (not parsed)\n");
-        }
-        // EtherType inconnu
+        // Autres EtherTypes (connus ou non)
         else {
+            const char *eth_name = lookup_ethertype(ethertype);
             print_indent(indent);
-            printf("Unknown EtherType: 0x%04x\n", ethertype);
+            if (eth_name) printf("%s (not parsed)\n", eth_name);
+            else printf("Unknown EtherType: 0x%04x\n", ethertype);
         }
     }
 }

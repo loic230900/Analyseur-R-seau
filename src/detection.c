@@ -1,199 +1,133 @@
 /**
- * @file detection.c
- * @brief Module de détection des protocoles applicatifs
+ * Module de détection des protocoles applicatifs
  * 
- * Ce module implémente la logique de détection des protocoles de la couche
- * application (couche 7 OSI) basée sur l'analyse des ports source et destination.
- * 
- * Deux systèmes de détection distincts :
- * - detect_app_tcp() : Protocoles TCP (HTTP, HTTPS, SMTP, IMAP, POP3, FTP, etc.)
- * - detect_app_udp() : Protocoles UDP (DNS, DHCP, QUIC)
- * 
- * Les détections sont ordonnées par priorité pour éviter les ambiguïtés.
- * Pour certains protocoles (POP3S), une vérification de la signature TLS
- * peut être effectuée pour différencier le trafic chiffré du trafic clair.
- * 
- * @author Projet Services Réseaux M1 SIRIS
- * @date 2024-2025
+ * Détection basée sur les ports source/destination.
+ * Approche table-driven pour éviter la duplication.
  */
 
 #include "detection.h"
 #include "capture.h"
-#include "../protocoles/include/dhcp.h"
-#include "../protocoles/include/http.h"
 #include "protocoles.h"
 
-/* ============================================================================
- * DÉTECTION DES PROTOCOLES APPLICATIFS TCP
- * ============================================================================ */
+
+/* Table des services TCP avec leurs ports et noms */
+static const struct {
+    uint16_t port1;
+    uint16_t port2;  /* 0 si un seul port */
+    app_proto_tcp_t proto;
+    const char *name;
+} tcp_services[] = {
+    {DNS_PORT, 0, APP_PROTO_TCP_DNS, "dns"},
+    {HTTP_PORT_PLAIN, 0, APP_PROTO_TCP_HTTP, "http"},
+    {HTTPS_PORT, 0, APP_PROTO_TCP_HTTPS, "https"},
+    {SMTP_PORT_PLAIN, SMTP_PORT_SUBMISSION, APP_PROTO_TCP_SMTP, "smtp"},
+    {SMTP_PORT_SSL, 0, APP_PROTO_TCP_SMTPS, "smtps"},
+    {IMAP_PORT_PLAIN, 0, APP_PROTO_TCP_IMAP, "imap"},
+    {IMAP_PORT_SSL, 0, APP_PROTO_TCP_IMAPS, "imaps"},
+    {POP3_PORT_PLAIN, 0, APP_PROTO_TCP_POP3, "pop3"},
+    {POP3_PORT_SSL, 0, APP_PROTO_TCP_POP3S, "pop3s"},
+    {FTP_PORT_CONTROL, 0, APP_PROTO_TCP_FTP, "ftp"},
+    {FTP_PORT_DATA, 0, APP_PROTO_TCP_FTP_DATA, "ftp-data"},
+    {TELNET_PORT, 0, APP_PROTO_TCP_TELNET, "telnet"}
+};
+#define TCP_SERVICES_COUNT (sizeof(tcp_services) / sizeof(tcp_services[0]))
+
+/* Table des services UDP avec leurs ports et noms */
+static const struct {
+    uint16_t port1;
+    uint16_t port2;  /* 0 si un seul port */
+    app_proto_udp_t proto;
+    const char *name;
+} udp_services[] = {
+    {DNS_PORT, 0, APP_PROTO_UDP_DNS, "dns"},
+    {5353, 0, APP_PROTO_UDP_DNS, "mdns"},  /* mDNS réutilise parser DNS */
+    {DHCP_SERVER_PORT, DHCP_CLIENT_PORT, APP_PROTO_UDP_DHCP, "dhcp"},
+    {HTTPS_PORT, 0, APP_PROTO_UDP_QUIC, "quic"}
+};
+#define UDP_SERVICES_COUNT (sizeof(udp_services) / sizeof(udp_services[0]))
+
+/* Helper: vérifie si un port correspond à une entrée de table */
+static int port_matches(uint16_t src, uint16_t dst, uint16_t p1, uint16_t p2) {
+    if (src == p1 || dst == p1) return 1;
+    if (p2 != 0 && (src == p2 || dst == p2)) return 1;
+    return 0;
+}
+
 
 /**
- * @brief Détecte le protocole applicatif d'une connexion TCP
+ * Détecte le protocole applicatif TCP basé sur les ports.
+ * Ignore les paquets sans payload (SYN/ACK/FIN).
  * 
- * Cette fonction analyse les ports source et destination pour identifier
- * le protocole applicatif transporté. Les protocoles sont testés par
- * ordre de priorité décroissante.
- * 
- * Protocoles détectés :
- * - DNS (port 53) : Requêtes DNS sur TCP
- * - HTTP (port 80) : Trafic web non chiffré
- * - HTTPS (port 443) : Trafic web chiffré TLS
- * - SMTP (ports 25, 587) : Envoi de mail en clair
- * - SMTPS (port 465) : Envoi de mail chiffré (TLS implicite)
- * - IMAP (port 143) : Récupération mail en clair
- * - IMAPS (port 993) : Récupération mail chiffrée
- * - POP3 (port 110) : Récupération mail en clair
- * - POP3S (port 995) : Récupération mail chiffrée
- * - FTP (port 21) : Canal de contrôle FTP
- * - FTP-DATA (port 20) : Canal de données FTP (mode actif)
- * - Telnet (port 23) : Administration à distance
- * 
- * @param src_port       Port source de la connexion TCP
- * @param dst_port       Port destination de la connexion TCP
- * @param payload_len    Longueur du payload TCP (0 = pas d'analyse TLS)
- * @param payload_start  Pointeur vers le début du payload (pour détection TLS)
- * @param check_tls      Activer la vérification de signature TLS (1) ou non (0)
- * 
- * @return Enum app_proto_tcp_t identifiant le protocole, ou APP_PROTO_TCP_NONE
+ * @param src_port        Port source TCP.
+ * @param dst_port        Port destination TCP.
+ *  @param payload_len     Longueur du payload TCP.
+ * @param payload_start   Pointeur vers le début du payload TCP.
+ * @param check_tls       Indicateur pour vérifier TLS (1=oui, 0  =non).
+ * @return Protocole détecté ou APP_PROTO_TCP_NONE.
  */
-app_proto_tcp_t detect_app_tcp(uint16_t src_port, uint16_t dst_port,
-                                int payload_len,
-                                const u_char *payload_start,
-                                int check_tls) {
-    /* Ces paramètres sont conservés pour compatibilité API avec d'autres protocoles
-     * qui pourraient nécessiter une inspection du payload (ex: détection TLS) */
+app_proto_tcp_t detect_app_tcp(uint16_t src_port, uint16_t dst_port,int payload_len,
+                                const u_char *payload_start, int check_tls) {
     (void)payload_start;
     (void)check_tls;
     
-    /* Retour anticipé si aucun payload à analyser */
-    if(payload_len <= 0) {
-        return APP_PROTO_TCP_NONE;
-    }
+    if (payload_len <= 0) return APP_PROTO_TCP_NONE;
     
-    /* ========== DNS (priorité 1) - Port 53 ========== */
-    if(src_port == DNS_PORT || dst_port == DNS_PORT) {
-        return APP_PROTO_TCP_DNS;
+    for (size_t i = 0; i < TCP_SERVICES_COUNT; i++) {
+        if (port_matches(src_port, dst_port, tcp_services[i].port1, tcp_services[i].port2)) {
+            return tcp_services[i].proto;
+        }
     }
-    
-    /* ========== HTTP (priorité 2) - Port 80 ========== */
-    if(src_port == HTTP_PORT_PLAIN || dst_port == HTTP_PORT_PLAIN) {
-        return APP_PROTO_TCP_HTTP;
-    }
-    
-    /* ========== HTTPS (priorité 3) - Port 443 ========== */
-    if(src_port == HTTPS_PORT || dst_port == HTTPS_PORT) {
-        return APP_PROTO_TCP_HTTPS;
-    }
-    
-    /* ========== SMTP (priorité 4) - Ports 25, 587 ========== */
-    /* Port 25 : MTA vers MTA (relayage)
-     * Port 587 : MUA vers MSA (soumission avec STARTTLS possible) */
-    if((src_port == SMTP_PORT_PLAIN || dst_port == SMTP_PORT_PLAIN) ||
-       (src_port == SMTP_PORT_SUBMISSION || dst_port == SMTP_PORT_SUBMISSION)) {
-        return APP_PROTO_TCP_SMTP;
-    }
-
-    /* ========== SMTPS (priorité 4bis) - Port 465 ========== */
-    /* TLS implicite : connexion chiffrée dès l'établissement
-     * Contrairement à STARTTLS (port 587) qui démarre en clair */
-    if(src_port == SMTP_PORT_SSL || dst_port == SMTP_PORT_SSL) {
-        return APP_PROTO_TCP_SMTPS;
-    }
-    
-    /* ========== IMAP (priorité 5) - Port 143 ========== */
-    if(src_port == IMAP_PORT_PLAIN || dst_port == IMAP_PORT_PLAIN) {
-        return APP_PROTO_TCP_IMAP;
-    }
-    
-    /* ========== IMAPS (priorité 6) - Port 993 ========== */
-    if(src_port == IMAP_PORT_SSL || dst_port == IMAP_PORT_SSL) {
-        return APP_PROTO_TCP_IMAPS;
-    }
-    
-    /* ========== POP3 (priorité 7) - Port 110 ========== */
-    if(src_port == POP3_PORT_PLAIN || dst_port == POP3_PORT_PLAIN) {
-        return APP_PROTO_TCP_POP3;
-    }
-    
-    /* ========== POP3S (priorité 8) - Port 995 ========== */
-    /* Port 995 est exclusivement POP3S (TLS implicite)
-     * Contrairement à STARTTLS qui démarre en clair sur port 110 */
-    if(src_port == POP3_PORT_SSL || dst_port == POP3_PORT_SSL) {
-        return APP_PROTO_TCP_POP3S;
-    }
-    
-    /* ========== FTP Control (priorité 9) - Port 21 ========== */
-    /* Canal de commandes/réponses textuelles */
-    if(src_port == FTP_PORT_CONTROL || dst_port == FTP_PORT_CONTROL) {
-        return APP_PROTO_TCP_FTP;
-    }
-    
-    /* ========== FTP Data (priorité 9bis) - Port 20 ========== */
-    /* Canal de transfert de fichiers (mode actif uniquement)
-     * Note: Le mode passif utilise des ports éphémères non détectables
-     * sans analyse de l'état de la connexion FTP */
-    if(src_port == FTP_PORT_DATA || dst_port == FTP_PORT_DATA) {
-        return APP_PROTO_TCP_FTP_DATA;
-    }
-    
-    /* ========== Telnet (priorité 10) - Port 23 ========== */
-    if(src_port == TELNET_PORT || dst_port == TELNET_PORT) {
-        return APP_PROTO_TCP_TELNET;
-    }
-    
-    /* Aucun protocole applicatif reconnu */
     return APP_PROTO_TCP_NONE;
 }
 
-/* ============================================================================
- * DÉTECTION DES PROTOCOLES APPLICATIFS UDP
- * ============================================================================ */
-
 /**
- * @brief Détecte le protocole applicatif d'un datagramme UDP
+ * Détecte le protocole applicatif UDP basé sur les ports.
  * 
- * Cette fonction analyse les ports source et destination pour identifier
- * le protocole applicatif transporté sur UDP.
+ * @param src_port  Port source UDP.
+ * @param dst_port  Port destination UDP.
+ * @return Protocole détecté ou APP_PROTO_UDP_NONE.
  * 
- * Protocoles détectés :
- * - DNS (port 53) : Requêtes DNS standard
- * - mDNS (port 5353) : Multicast DNS (découverte locale)
- * - DHCP (ports 67, 68) : Configuration IP automatique
- * - QUIC (port 443) : HTTP/3 sur UDP
- * 
- * @param src_port Port source du datagramme UDP
- * @param dst_port Port destination du datagramme UDP
- * 
- * @return Enum app_proto_udp_t identifiant le protocole, ou APP_PROTO_UDP_NONE
  */
 app_proto_udp_t detect_app_udp(uint16_t src_port, uint16_t dst_port) {
-    /* ========== DNS (priorité 1) - Port 53 ========== */
-    if(src_port == DNS_PORT || dst_port == DNS_PORT) {
-        return APP_PROTO_UDP_DNS;
+    for (size_t i = 0; i < UDP_SERVICES_COUNT; i++) {
+        if (port_matches(src_port, dst_port, udp_services[i].port1, udp_services[i].port2)) {
+            return udp_services[i].proto;
+        }
     }
-    
-    /* ========== mDNS (priorité 2) - Port 5353 ========== */
-    /* Multicast DNS pour découverte de services locaux (.local)
-     * Utilise le même format que DNS standard */
-    if(src_port == 5353 || dst_port == 5353) {
-        return APP_PROTO_UDP_DNS;  /* Réutilise le parser DNS */
-    }
-    
-    /* ========== DHCP (priorité 3) - Ports 67/68 ========== */
-    /* Port 67 : Serveur DHCP (BOOTP server)
-     * Port 68 : Client DHCP (BOOTP client) */
-    if(src_port == DHCP_SERVER_PORT || src_port == DHCP_CLIENT_PORT ||
-       dst_port == DHCP_SERVER_PORT || dst_port == DHCP_CLIENT_PORT) {
-        return APP_PROTO_UDP_DHCP;
-    }
-    
-    /* ========== QUIC / HTTP/3 (priorité 4) - Port 443 ========== */
-    /* Protocole QUIC développé par Google, base de HTTP/3
-     * Entièrement chiffré, seuls les en-têtes publics sont lisibles */
-    if(src_port == HTTPS_PORT || dst_port == HTTPS_PORT) {
-        return APP_PROTO_UDP_QUIC;
-    }
-    
-    /* Aucun protocole applicatif reconnu */
     return APP_PROTO_UDP_NONE;
+}
+
+
+/**
+ * Retourne le nom du service TCP pour annoter les paquets sans payload.
+ * 
+ * @param src_port  Port source TCP.
+ * @param dst_port  Port destination TCP.
+ * @return Nom du service ou NULL si inconnu.
+ * 
+ */
+const char* get_tcp_service_name(uint16_t src_port, uint16_t dst_port) {
+    for (size_t i = 0; i < TCP_SERVICES_COUNT; i++) {
+        if (port_matches(src_port, dst_port, tcp_services[i].port1, tcp_services[i].port2)) {
+            return tcp_services[i].name;
+        }
+    }
+    return NULL;
+}
+
+/**
+ * Retourne le nom du service UDP.
+ * 
+ * @param src_port  Port source UDP.
+ * @param dst_port  Port destination UDP.
+ * @return Nom du service ou NULL si inconnu.
+ * 
+ */
+const char* get_udp_service_name(uint16_t src_port, uint16_t dst_port) {
+    for (size_t i = 0; i < UDP_SERVICES_COUNT; i++) {
+        if (port_matches(src_port, dst_port, udp_services[i].port1, udp_services[i].port2)) {
+            return udp_services[i].name;
+        }
+    }
+    return NULL;
 }

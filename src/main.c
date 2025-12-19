@@ -1,13 +1,5 @@
 /**
- * Ce fichier contient la fonction main() qui :
- * - Parse les arguments de la ligne de commande (-i, -o, -f, -v)
- * - Initialise la session de capture pcap (live ou fichier)
- * - Applique les filtres BPF si spécifiés
- * - Lance la boucle de capture avec pcap_loop()
- * - Gère l'arrêt propre via Ctrl+C (SIGINT)
- * - Affiche les statistiques de capture à la fin
- * 
- * Usage : ./analyseur [-i interface | -o fichier] [-f filtre] [-v 1-3]
+ * Ce fichier contient la fonction main()
  */
 
 #include <pcap.h>
@@ -17,7 +9,6 @@
 #include <string.h>
 #include <signal.h>
 #include "capture.h"
-#include "dns.h"
 #include "filter.h"
 
 // Constantes de configuration
@@ -45,30 +36,55 @@ static void signal_handler(int sig) {
 }
 
 /**
- * Point d'entrée du programme
- * 
- * Codes de retour :
- * - 0 : Succès (capture terminée normalement ou Ctrl+C)
- * - 1 : Erreur d'arguments (usage incorrect)
- * - 2 : Erreur pcap (interface/fichier inaccessible, filtre invalide)
- * 
- * @param argc Nombre d'arguments
- * @param argv Tableau des arguments
- * @return Code de retour (0=succès, 1=erreur args, 2=erreur pcap)
+ * Affiche l'aide détaillée du programme
+ * @param prog_name Nom du programme (argv[0])
  */
+static void print_usage(const char *prog_name) {
+    fprintf(stderr, "Usage: %s (-i interface | -o file) -v verbosity [-f filter]\n\n", prog_name);
+    fprintf(stderr, "Options obligatoires :\n");
+    fprintf(stderr, "  -i <interface>  Capture en temps réel sur une interface réseau (ex: eth0, wlan0)\n");
+    fprintf(stderr, "  -o <fichier>    Analyse hors ligne d'un fichier pcap (créé par tcpdump)\n");
+    fprintf(stderr, "                  (une seule des deux options -i ou -o doit être spécifiée)\n");
+    fprintf(stderr, "  -v <niveau>     Niveau de verbosité: 1=concis, 2=synthétique, 3=complet\n\n");
+    fprintf(stderr, "Option facultative :\n");
+    fprintf(stderr, "  -f <filtre>     Filtre BPF ou alias (défaut: aucun - capture tout)\n");
+    fprintf(stderr, "  -h              Affiche cette aide\n\n");
+    fprintf(stderr, "Alias de filtres disponibles (pas tout les protocoles en ont un) :\n");
+    fprintf(stderr, "  dns             Tout le trafic DNS \n");
+    fprintf(stderr, "  web             Trafic HTTP et HTTPS (ports 80, 443)\n");
+    fprintf(stderr, "  mail            Tous les protocoles mail (SMTP, IMAP, POP3 et variantes SSL)\n");
+    fprintf(stderr, "  smtp, ftp, telnet  Protocoles spécifiques\n\n");
+    fprintf(stderr, "Exemples :\n");
+    fprintf(stderr, "  %s -i eth0 -v 2 -f dns              # Capture DNS en temps réel, verbosité moyenne\n", prog_name);
+    fprintf(stderr, "  %s -o capture.pcap -v 3             # Analyse complète d'un fichier\n", prog_name);
+    fprintf(stderr, "  %s -i wlan0 -f \"tcp port 80\"        # Filtre BPF personnalisé\n\n", prog_name);
+}
+
+
 int main(int argc, char *argv[]) {
     // Variables pour les options de la ligne de commande
     char *interface = NULL;     // Nom de l'interface réseau (-i)
     char *filename = NULL;      // Nom du fichier pcap (-o)
     char *filter_exp = NULL;    // Expression de filtre BPF (-f)
     int opt;                    // Option courante de getopt
-    int verbosity = 3;          // Niveau de verbosité par défaut : complet
+    int verbosity = -1;         // Niveau de verbosité (obligatoire)
     char errbuf[PCAP_ERRBUF_SIZE];  // Buffer d'erreur pcap
-    pcap_t *handle;             // Poignée de session pcap
+    pcap_t *handle;             // handle pcap
+
+    // Message court si aucun argument
+    if (argc == 1) {
+        fprintf(stderr, "Error: Missing required arguments.\n");
+        fprintf(stderr, "Usage: %s (-i interface | -o file) -v verbosity [-f filter]\n", argv[0]);
+        fprintf(stderr, "Use '%s -h' for detailed help.\n", argv[0]);
+        return 1;
+    }
 
     // Analyse des options de la ligne de commande
-    while ((opt = getopt(argc, argv, "i:o:f:v:")) != -1) {
+    while ((opt = getopt(argc, argv, "hi:o:f:v:")) != -1) {
         switch (opt) {
+            case 'h':
+                print_usage(argv[0]);
+                return 0;
             case 'i':
                 interface = optarg;   // Nom de l'interface pour capture live
                 break;
@@ -86,30 +102,19 @@ int main(int argc, char *argv[]) {
                 }
                 break;
             default:
-                // Affichage de l'aide détaillée
-                fprintf(stderr, "Usage: %s [-i interface | -o file] [-f filter] [-v verbosity]\n\n", argv[0]);
-                fprintf(stderr, "Options obligatoires (une seule) :\n");
-                fprintf(stderr, "  -i <interface>  Capture en temps réel sur une interface réseau (ex: eth0, wlan0)\n");
-                fprintf(stderr, "  -o <fichier>    Analyse hors ligne d'un fichier pcap (créé par tcpdump)\n\n");
-                fprintf(stderr, "Options facultatives :\n");
-                fprintf(stderr, "  -f <filtre>     Filtre BPF ou alias (défaut: aucun - capture tout)\n");
-                fprintf(stderr, "  -v <niveau>     Niveau de verbosité: 1=concis, 2=synthétique, 3=complet (défaut: 3)\n\n");
-                fprintf(stderr, "Alias de filtres disponibles :\n");
-                fprintf(stderr, "  dns             Tout le trafic DNS (UDP et TCP port 53)\n");
-                fprintf(stderr, "  web             Trafic HTTP et HTTPS (ports 80, 443)\n");
-                fprintf(stderr, "  mail            Tous les protocoles mail (SMTP, IMAP, POP3 et variantes SSL)\n");
-                fprintf(stderr, "  smtp, ftp, telnet  Protocoles spécifiques\n\n");
-                fprintf(stderr, "Exemples :\n");
-                fprintf(stderr, "  %s -i eth0 -v 2 -f dns              # Capture DNS en temps réel, verbosité moyenne\n", argv[0]);
-                fprintf(stderr, "  %s -o capture.pcap -v 3             # Analyse complète d'un fichier\n", argv[0]);
-                fprintf(stderr, "  %s -i wlan0 -f \"tcp port 80\"        # Filtre BPF personnalisé\n\n", argv[0]);
-                exit(EXIT_FAILURE);
+                print_usage(argv[0]);
+                return 1;
         }
     }
 
-    // Validation des arguments : interface XOR fichier obligatoire
+    // Validation des arguments obligatoires
     if ((interface && filename) || (!interface && !filename)) {
         fprintf(stderr, "Error: You must specify either -i (interface) or -o (file), but not both.\n");
+        fprintf(stderr, "Use '%s' without arguments to see the full help.\n", argv[0]);
+        return 1;
+    }
+    if (verbosity == -1) {
+        fprintf(stderr, "Error: You must specify verbosity level with -v (1, 2, or 3).\n");
         fprintf(stderr, "Use '%s' without arguments to see the full help.\n", argv[0]);
         return 1;
     }
@@ -156,16 +161,16 @@ int main(int argc, char *argv[]) {
     // Affichage des statistiques de capture
     if(g_stop_capture || loop_ret == -2) {
         struct pcap_stat stats;
-        fprintf(stderr, "\n\n=== Capture Statistics ===\n");
+        fprintf(stderr, "\n\n=== Capture Statistics (used for debug) ===\n");
         if(pcap_stats(handle, &stats) == 0) {
             fprintf(stderr, "Packets received by libpcap: %u\n", stats.ps_recv);
             fprintf(stderr, "Packets dropped (kernel):    %u\n", stats.ps_drop);
             fprintf(stderr, "Packets dropped (iface):     %u\n", stats.ps_ifdrop);
             if(stats.ps_drop > 0 || stats.ps_ifdrop > 0) {
-                fprintf(stderr, "⚠️  WARNING: Packets were dropped!\n");
+                fprintf(stderr, " WARNING: Packets were dropped!\n");
                 fprintf(stderr, "   Tip: Increase buffer size or reduce verbosity\n");
             } else {
-                fprintf(stderr, "✓ No packet loss detected\n");
+                fprintf(stderr, "No packet loss detected\n");
             }
         } else {
             fprintf(stderr, "Unable to retrieve statistics\n");

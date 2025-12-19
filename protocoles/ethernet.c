@@ -1,12 +1,7 @@
 /**
- * @file ethernet.c
- * @brief Analyseur de trames Ethernet (couche 2 - Liaison de données)
- * 
  * Ce module implémente le parsing des trames Ethernet II (IEEE 802.3).
  * L'en-tête Ethernet fait 14 octets : MAC dst (6) + MAC src (6) + EtherType (2)
  * 
- * @author Projet Services Réseaux M1 SIRIS
- * @date 2024-2025
  */
 
 #include "ethernet.h"
@@ -18,7 +13,7 @@
 
 /* LLDP n'est pas toujours défini dans les headers système */
 #ifndef ETHERTYPE_LLDP
-#define ETHERTYPE_LLDP 0x88CC
+#define ETHERTYPE_LLDP 0x88CC // Link Layer Discovery Protocol on le detecte seulement
 #endif
 
 /**
@@ -32,6 +27,8 @@ const char* get_ethertype_name(uint16_t type) {
         case ETHERTYPE_IPV6: return "IPv6";
         case ETHERTYPE_ARP: return "ARP";
         case ETHERTYPE_REVARP: return "RARP";
+
+        //pour reduire bruit visuelle sur tests live 
         case ETHERTYPE_VLAN: return "802.1Q VLAN";
         case ETHERTYPE_LLDP: return "LLDP";
         default: return NULL;
@@ -46,7 +43,7 @@ int parse_ethernet(const u_char *packet, int length, int verbosity, int indent, 
     const struct ether_header *eth = (struct ether_header *)packet;
     *ethertype = ntohs(eth->ether_type);
  
-    /* Formatage des adresses MAC en notation hexadécimale standard (xx:xx:xx:xx:xx:xx) */
+    /* Formatage des adresses MAC en notation hexadécimale */
     char src_mac[18], dst_mac[18];
     snprintf(dst_mac, sizeof(dst_mac), "%02x:%02x:%02x:%02x:%02x:%02x",
              eth->ether_dhost[0], eth->ether_dhost[1], eth->ether_dhost[2],

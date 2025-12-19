@@ -23,23 +23,28 @@ typedef unsigned char u_char;
 #define HTTPS_PORT 443          /* Port standard pour HTTPS (HTTP sur TLS) */
 
 /**
- * Analyse et affiche un message HTTP(Request ou Reponse).
- * @param packet    Pointeur vers le début du payload TCP contenant HTTP.
- * @param length    Longeur du payload TCP disponible.
- * @param verbosity Niveau de verbosité (2 ou 3).
- * @param indent    Indentation en espace pour l'affichage.
- * @return          Nombre d'octets consommés (headers + body si détecté),
- *                  ou 0 si ce n'est pas du HTTP ou erreur.
+ * Fonction principale de parsing HTTP.
+ * Détecte automatiquement le type (requête/réponse/body fragmenté)
+ * et route vers le parser approprié.
+ * 
+ * @param packet    Pointeur vers le début des données HTTP
+ * @param length    Longueur des données HTTP
+ * @param verbosity Niveau de verbosité (2 ou 3)
+ * @param indent    Indentation pour l'affichage
+ * @return          Nombre d'octets consommés
  */
 int parse_http(const u_char *packet, int length, int verbosity, int indent);
 
 /**
- * Résumé verbosité 1 pour HTTP (méthode+URI ou code status).
- * @param packet           Pointeur vers le début du paquet complet.
- * @param caplen           Longueur capturée totale.
- * @param offset_tcp_payload Offset du début du payload TCP (après TCP header).
- * @param resume           Buffer de sortie pour le résumé.
- * @return                 1 en succès, 0 en échec.
+ * Résumé verbosité 1 pour HTTP.
+ * Génère une ligne compacte avec méthode+URI (requête) ou code+status (réponse).
+ * Enrichi avec Host (requête) ou Content-Type (réponse) si disponibles.
+ * 
+ * @param packet             Pointeur vers le paquet complet
+ * @param caplen             Longueur capturée
+ * @param offset_tcp_payload Offset du payload TCP (début HTTP)
+ * @param resume             Buffer de résumé (sortie)
+ * @return                   1 si succès, 0 si échec
  */
 int http_v1_summary(const u_char *packet, int caplen, int offset_tcp_payload, char *resume);
 

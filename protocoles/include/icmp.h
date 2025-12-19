@@ -18,12 +18,12 @@
 #define ICMP_HDR_MIN_LEN 8
 
 /**
- * Analyse et affiche les champs de l'en-tête ICMP.
- * @param packet    Pointeur vers le début de l'en-tête ICMP.
- * @param length    Longueur restante du paquet.
- * @param verbosity Niveau de verbosité (2 ou 3).
- * @param indent    Indentation en espaces pour l'affichage.
- * @return          Taille de l'en-tête ICMP (variable) ou 0 en cas d'erreur.
+ * Parse et affiche un en-tête ICMP
+ * @param packet Pointeur vers le début de l'en-tête ICMP
+ * @param length Longueur restante du paquet
+ * @param verbosity Niveau de verbosité (2 ou 3)
+ * @param indent Indentation pour l'affichage
+ * @return Taille de l'en-tête ICMP (8 octets minimum) ou 0 si erreur
  */
 int parse_icmp(const u_char *packet, int length, int verbosity, int indent);
 

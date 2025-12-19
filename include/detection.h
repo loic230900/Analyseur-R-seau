@@ -72,4 +72,23 @@ app_proto_tcp_t detect_app_tcp(uint16_t src_port, uint16_t dst_port, int payload
  */
 app_proto_udp_t detect_app_udp(uint16_t src_port, uint16_t dst_port);
 
+/**
+ * Retourne le nom du service TCP basé sur les ports (sans vérifier le payload).
+ * Utilisé pour annoter les paquets de contrôle TCP (SYN, ACK, FIN) sans payload.
+ * 
+ * @param src_port Port source
+ * @param dst_port Port destination
+ * @return Nom du service (minuscules) ou NULL si inconnu
+ */
+const char* get_tcp_service_name(uint16_t src_port, uint16_t dst_port);
+
+/**
+ * Retourne le nom du service UDP basé sur les ports.
+ * 
+ * @param src_port Port source
+ * @param dst_port Port destination
+ * @return Nom du service (minuscules) ou NULL si inconnu
+ */
+const char* get_udp_service_name(uint16_t src_port, uint16_t dst_port);
+
 #endif /* DETECTION_H */

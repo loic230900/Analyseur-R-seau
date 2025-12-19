@@ -23,11 +23,15 @@
  * @param resume            Buffer de sortie pour le résumé
  * @param src_port          Port source (nécessaire pour certains protocoles)
  * @param dst_port          Port destination (nécessaire pour certains protocoles)
+ * @param src_ip            Adresse IP source (chaîne de caractères)
+ * @param dst_ip            Adresse IP destination (chaîne de caractères)
  * 
  * @return 1 si traitement effectué, 0 si protocole non géré
  */
-int process_app_tcp_v1(app_proto_tcp_t proto, const u_char *packet, int caplen, int tcp_payload_offset, char *resume,
-                        uint16_t src_port, uint16_t dst_port);
+int process_app_tcp_v1(app_proto_tcp_t proto, const u_char *packet, int caplen, 
+                       int tcp_payload_offset, char *resume,
+                       uint16_t src_port, uint16_t dst_port,
+                       const char *src_ip, const char *dst_ip);
 
 /**
  * Route le paquet vers la fonction *_v1_summary() appropriée pour
@@ -38,10 +42,17 @@ int process_app_tcp_v1(app_proto_tcp_t proto, const u_char *packet, int caplen, 
  * @param caplen            Longueur totale capturée
  * @param udp_payload_offset Offset du début du payload UDP
  * @param resume            Buffer de sortie pour le résumé
+ * @param src_port          Port source
+ * @param dst_port          Port destination
+ * @param src_ip            Adresse IP source (chaîne de caractères)
+ * @param dst_ip            Adresse IP destination (chaîne de caractères)
  * 
  * @return 1 si traitement effectué, 0 si protocole non géré
  */
-int process_app_udp_v1(app_proto_udp_t proto, const u_char *packet, int caplen, int udp_payload_offset, char *resume);
+int process_app_udp_v1(app_proto_udp_t proto, const u_char *packet, int caplen, 
+                       int udp_payload_offset, char *resume,
+                       uint16_t src_port, uint16_t dst_port,
+                       const char *src_ip, const char *dst_ip);
 
 //VERBOSITÉS 2-3 (format détaillé)
 /**
