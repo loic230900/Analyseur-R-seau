@@ -1,69 +1,86 @@
-# Analyseur Réseau
+# Network Packet Analyzer
 
-Analyseur de paquets réseau en C utilisant libpcap, développé dans le cadre du TP "Services Réseaux" (M1 SIRIS).
+A network packet analyzer in C using **libpcap**. Supports both live capture on a network interface and offline analysis of `.pcap` files, with three verbosity levels from one-line-per-frame to fully expanded protocol fields.
 
-## Fonctionnalités
+Built for the "Network Services" course, M1 SIRIS.
 
-- **Capture live** sur une interface réseau (nécessite `sudo`)
-- **Analyse offline** de fichiers `.pcap` créés par tcpdump
-- **3 niveaux de verbosité** : concis, synthétique, complet
-- **Filtrage BPF** avec alias prédéfinis
+## Highlights
 
-### Protocoles supportés
+- **Live capture** on any network interface (requires `sudo`)
+- **Offline analysis** of `.pcap` files captured by `tcpdump` or Wireshark
+- **Three verbosity levels** — concise, synthetic, fully expanded
+- **BPF filtering** with named aliases for common patterns
 
-| Couche | Protocoles |
-|--------|------------|
-| **L2 - Liaison** | Ethernet, ARP, RARP |
-| **L3 - Réseau** | IPv4 (options, fragmentation), IPv6 (extensions) |
-| **L4 - Transport** | TCP (options), UDP, ICMP, ICMPv6/NDP |
-| **L7 - Application** | DNS, DHCP/BOOTP, HTTP, FTP, SMTP, IMAP, POP3, Telnet |
+## Supported protocols
 
-## Prérequis
+| Layer | Protocols |
+|------|-----------|
+| **L2 — Link** | Ethernet, ARP, RARP |
+| **L3 — Network** | IPv4 (incl. options, fragmentation), IPv6 (incl. extension headers) |
+| **L4 — Transport** | TCP (with options), UDP, ICMP, ICMPv6, NDP |
+| **L7 — Application** | DNS, DHCP / BOOTP, HTTP, FTP, SMTP, IMAP, POP3, Telnet |
 
-```bash
-# Debian/Ubuntu
-sudo apt install libpcap-dev
-
-# RHEL/Fedora
-sudo dnf install libpcap-devel
-```
-
-## Compilation
+## Prerequisites
 
 ```bash
-make          # Compiler
-make clean    # Nettoyer
+sudo apt install libpcap-dev    # Debian / Ubuntu
+sudo dnf install libpcap-devel  # RHEL / Fedora
 ```
 
-## Utilisation
+## Build
 
 ```bash
-./analyseur (-i interface | -o fichier) -v niveau [-f filtre]
+make           # build the analyser binary
+make clean
 ```
-dependant de l'interface lancer avec sudo.
+
+## Usage
+
+```bash
+./analyseur (-i <interface> | -o <file.pcap>) -v <level> [-f <filter>]
+```
+
+Live capture requires `sudo`.
 
 ### Options
 
-| Option | Description |
-|--------|-------------|
-| `-i <interface>` | Capture live (ex: `eth0`, `wlo1`) |
-| `-o <fichier>` | Analyse d'un fichier pcap |
-| `-v <1\|2\|3>` | Niveau de verbosité |
-| `-f <filtre>` | Filtre BPF ou alias |
-| `-h` | Aide |
+| Flag | Description |
+|------|-------------|
+| `-i <interface>` | Capture live on interface (e.g. `eth0`, `wlo1`) |
+| `-o <file>` | Analyze a saved `.pcap` file |
+| `-v <1\|2\|3>` | Verbosity level |
+| `-f <filter>` | BPF filter expression or named alias |
+| `-h` | Help |
 
-### Niveaux de verbosité
+### Verbosity levels
 
-- **`-v 1`** : Une ligne par trame (timestamp, protocole, longueur)
-- **`-v 2`** : Une ligne par couche protocolaire
-- **`-v 3`** : Tous les champs avec arborescence détaillée
+- **`-v 1`** — one line per frame (timestamp, top-level protocol, length)
+- **`-v 2`** — one line per protocol layer
+- **`-v 3`** — every field, indented as a tree
 
+## Examples
 
+```bash
+sudo ./analyseur -i wlo1 -v 2                 # live, layer-by-layer
+./analyseur -o capture.pcap -v 3              # full dump from a saved capture
+sudo ./analyseur -i eth0 -v 1 -f "port 53"    # DNS traffic only
+```
 
-## Auteur
-Waltzing Loïc
-Projet individuel - M1 SIRIS, Semestre 1
+## Project layout
 
-## Licence
+```
+.
+├── src/            # Sources by protocol layer
+├── include/        # Public headers
+├── protocoles/     # Protocol parsers
+├── makefile
+└── README.md
+```
 
-Projet académique - Usage éducatif uniquement
+## Author
+
+**Loïc Waltzing** : individual project, M1 SIRIS.
+
+## License
+
+See [`LICENSE`](LICENSE). MIT.
